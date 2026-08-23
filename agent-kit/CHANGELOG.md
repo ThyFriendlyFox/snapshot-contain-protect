@@ -63,3 +63,6 @@ human is ready for the release workflow to publish binaries.
   link and orphaning the work at its target. It refuses with 400.
 - The nesting guard missed a data directory reached through a symlink, and
   read a directory named `..foo` as an escape.
+- A restore that had already landed returned 400 when the workset had gained
+  a path the target snapshot predates. The node recording a restore now
+  covers the paths that can be read, the same rule the safety snapshot uses.

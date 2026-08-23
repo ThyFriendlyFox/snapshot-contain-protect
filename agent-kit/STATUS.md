@@ -12,7 +12,7 @@ behavior change. The weekly cycle (WEEKLY.md step 5) refreshes it.
 | APFS backend | ❌ | Stub. Refuses with "not implemented". |
 | VSS backend | ❌ | Stub. Refuses with "not implemented". |
 | SQLite store | ✅ | 10 store tests; the graph survives a reopen |
-| Daemon, 5 verbs | ✅ | 31 API tests; a manual run snapshotted in 1 ms and restored a working set |
+| Daemon, 5 verbs | ✅ | 32 API tests; a manual run snapshotted in 1 ms and restored a working set |
 | snapctl client | ✅ | 5 client tests against a real service |
 | Implicit checkpoints | ✅ | 6 retention tests; the 50-snapshot budget holds |
 | Container layer | 🧊 | Seam only. START.md puts it after step 5; the MVP stops at step 5. |

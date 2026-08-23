@@ -297,12 +297,49 @@ func (s *Service) Restore(ctx context.Context, id string) (RestoreResult, error)
 	if err := s.engine.Restore(ctx, target.FSHandle); err != nil {
 		return RestoreResult{}, asAPIError(err)
 	}
-	sn, err := s.snapshotLocked(ctx, w, "restore of "+target.ID, true, &target.ID)
+
+	// The restore has landed. The node that records it covers the paths that
+	// can be read now, the same subset rule the safety snapshot uses. A
+	// workset path added after the target snapshot was taken must not turn a
+	// completed restore into an error the caller reads as "nothing happened".
+	usable, skipped := s.usablePaths(w)
+	if len(usable) == 0 {
+		return RestoreResult{}, fmt.Errorf("the restore finished, but no workset path could be snapshotted to record it")
+	}
+	label := "restore of " + target.ID
+	if len(skipped) > 0 {
+		label = fmt.Sprintf("%s (partial: %d of %d paths)", label, len(usable), len(w.Paths))
+		result.Warning = joinWarnings(result.Warning, fmt.Sprintf(
+			"the node recording this restore covers %d of %d paths; it does not hold %s",
+			len(usable), len(w.Paths), strings.Join(skipped, ", ")))
+	}
+	sn, err := s.snapshotPathsLocked(ctx, w, usable, label, true, &target.ID)
 	if err != nil {
 		return RestoreResult{}, asAPIError(err)
 	}
 	result.Node = sn
 	return result, nil
+}
+
+// usablePaths splits a workset into the paths a snapshot can read now and the
+// paths it cannot.
+func (s *Service) usablePaths(w store.Workset) (usable, skipped []string) {
+	root := s.cfg.SnapshotRoot()
+	for _, p := range w.Paths {
+		if err := engine.CheckSource(root, p); err != nil {
+			skipped = append(skipped, p)
+			continue
+		}
+		usable = append(usable, p)
+	}
+	return usable, skipped
+}
+
+func joinWarnings(a, b string) string {
+	if a == "" {
+		return b
+	}
+	return a + "; " + b
 }
 
 // safetySnapshot is the undo for the undo: an agent that rolls back to the
@@ -313,17 +350,7 @@ func (s *Service) Restore(ctx context.Context, id string) (RestoreResult, error)
 // can: one deleted path in a workset of 5 must not discard the other 4. The
 // result says what it missed, so the caller is not left to read a log.
 func (s *Service) safetySnapshot(ctx context.Context, w store.Workset, targetID string) RestoreResult {
-	root := s.cfg.SnapshotRoot()
-	usable := make([]string, 0, len(w.Paths))
-	var skipped []string
-	for _, p := range w.Paths {
-		if err := engine.CheckSource(root, p); err != nil {
-			skipped = append(skipped, p)
-			continue
-		}
-		usable = append(usable, p)
-	}
-
+	usable, skipped := s.usablePaths(w)
 	if len(usable) == 0 {
 		warning := fmt.Sprintf("no safety snapshot: none of the %d workset paths can be read", len(w.Paths))
 		s.log.Warn("safety snapshot skipped", "workset", w.Name, "target", targetID, "paths", len(w.Paths))

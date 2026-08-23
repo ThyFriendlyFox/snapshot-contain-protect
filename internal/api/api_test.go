@@ -557,3 +557,28 @@ func readFile(t *testing.T, path string) string {
 	}
 	return string(b)
 }
+
+func TestRestoreThatLandedNeverReportsFailure(t *testing.T) {
+	f := newFixture(t)
+	first := f.snapshot("first", false)
+
+	// The workset gains a path that is not there yet, which is allowed. The
+	// target snapshot predates it.
+	later := filepath.Join(filepath.Dir(f.work), "joined-later")
+	f.post("/worksets", worksetRequest{Name: "proj-a", Paths: []string{f.work, later}}, http.StatusCreated, nil)
+	replace(t, filepath.Join(f.work, "config.json"), "wrecked")
+
+	var got restoreResponse
+	f.post("/restore", restoreRequest{ID: first.ID, Confirm: true}, http.StatusCreated, &got)
+
+	// The restore landed, so the graph must record it.
+	if body := readFile(t, filepath.Join(f.work, "config.json")); body != "{}" {
+		t.Fatalf("config.json = %q, want %q", body, "{}")
+	}
+	if got.ID == "" || got.ParentID == nil || *got.ParentID != first.ID {
+		t.Fatalf("no node recorded the restore: %+v", got.Snapshot)
+	}
+	if got.SafetyWarning == "" {
+		t.Error("the caller was not told which paths the nodes miss")
+	}
+}

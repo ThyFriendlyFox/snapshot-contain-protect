@@ -41,6 +41,31 @@ Evidence: <commit / tag / gate run / screenshot>
 
 <!-- Entries below, newest first. -->
 
+## 2026-08-23 — The third review round came back clean
+
+I sent the round-2 fixes back for a third pass. All 8 original findings and
+all 3 of my own regressions are closed, verified by running the suites as a
+normal user. The reviewer also checked the 4 things I was most suspicious of
+in my own work — the recursive path resolver, the safety-snapshot subset, the
+embedded-struct JSON, and whether the new gate step could pass while hiding a
+failure — and found all 4 sound. It confirmed the gate is honest by reverting
+1 fix and watching step 6 fail while step 4 stayed green.
+
+One residual came back: a restore could land on disk correctly and still
+return 400. The node that records a restore was written over every declared
+path, while the safety snapshot and the restore itself tolerate a subset. So
+a workset that had gained a path the target snapshot predates produced a
+correct rollback, a 400, and no node in the graph. No data was lost, but an
+agent reading 400 as "nothing happened" would act on a wrong premise. The
+node now covers the readable paths, the same rule the safety snapshot uses.
+
+3 rounds, 12 defects, 10 of them in code I wrote after the first review. The
+lesson I take: a fix deserves the same suspicion as the code it replaces.
+
+Evidence: `./verify/verify.sh` green. 74 tests, 0 failures, clean under
+`-race`. The new test returns the reviewer's exact 400 when the fix is
+reverted.
+
 ## 2026-08-23 — The second review round: my fixes had introduced 3 defects
 
 I sent the 8 fixes back to the reviewer and asked 2 questions: is each

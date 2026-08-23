@@ -54,7 +54,8 @@ Requires Go 1.25.
     keeps its row, logs, and does not stop the pass or the worksets after
     it.
 14. **A restore that landed on disk reports success.** Housekeeping after
-    the rename never turns a successful restore into an error.
+    the rename never turns a successful restore into an error, and neither
+    does a workset path that cannot be read when the node is written.
 
 ## Landmine map
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -62,6 +63,7 @@ type Service struct {
 	engine    engine.Engine
 	container container.Runtime
 	now       func() time.Time
+	log       *slog.Logger
 
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex // one lock per workset
@@ -86,9 +88,13 @@ func NewService(ctx context.Context, cfg Config) (*Service, error) {
 		engine:    eng,
 		container: container.Unavailable{},
 		now:       time.Now,
+		log:       slog.Default(),
 		locks:     map[string]*sync.Mutex{},
 	}, nil
 }
+
+// SetLogger points the service at the daemon's logger.
+func (s *Service) SetLogger(l *slog.Logger) { s.log = l }
 
 // Close releases the store.
 func (s *Service) Close() error { return s.store.Close() }
@@ -167,7 +173,15 @@ func (s *Service) CreateSnapshot(ctx context.Context, worksetName, label string,
 	if err != nil {
 		return store.Snapshot{}, 0, err
 	}
-	return sn, s.now().Sub(start), nil
+	took := s.now().Sub(start)
+
+	// Retention runs after the snapshot the caller asked for, never before it.
+	// A failed prune is maintenance debt, not a failed checkpoint; the timer
+	// tries again.
+	if err := s.pruneAutoLocked(ctx, w.ID); err != nil {
+		s.log.Warn("retention after snapshot failed", "workset", w.Name, "error", err)
+	}
+	return sn, took, nil
 }
 
 // snapshotLocked writes one node. The caller holds the workset lock. parent

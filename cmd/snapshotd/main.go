@@ -45,6 +45,9 @@ func run() error {
 		return err
 	}
 	defer svc.Close()
+	svc.SetLogger(log)
+
+	go svc.RunRetention(ctx, log)
 
 	return api.Serve(ctx, svc, log)
 }

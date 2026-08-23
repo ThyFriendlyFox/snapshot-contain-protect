@@ -203,3 +203,50 @@ func ids(list []Snapshot) []string {
 	}
 	return out
 }
+
+func TestReparentMovesChildren(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	seedWorkset(t, s)
+	a, b := "01A", "01B"
+	mustPut(t, s, node(a, nil, true))
+	mustPut(t, s, node(b, &a, true))
+	mustPut(t, s, node("01C", &b, true))
+
+	// Prune 01B out of the middle: its child joins its parent.
+	if err := s.Reparent(ctx, b, &a); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DeleteSnapshot(ctx, b, false); err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.SnapshotByID(ctx, "01C")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ParentID == nil || *c.ParentID != a {
+		t.Fatalf("01C parent = %v, want %s", c.ParentID, a)
+	}
+}
+
+func TestManualAncestorsProtectsTheChain(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	seedWorkset(t, s)
+	a, b, c := "01A", "01B", "01C"
+	mustPut(t, s, node(a, nil, true)) // auto, ancestor of a manual node
+	mustPut(t, s, node(b, &a, false)) // manual
+	mustPut(t, s, node(c, &b, true))  // auto leaf
+	mustPut(t, s, node("01D", &a, true))
+
+	protected, err := s.ManualAncestors(ctx, "01WS")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !protected[a] || !protected[b] {
+		t.Fatalf("protected = %v, want 01A and 01B", protected)
+	}
+	if protected[c] || protected["01D"] {
+		t.Fatalf("protected = %v, want auto leaves unprotected", protected)
+	}
+}

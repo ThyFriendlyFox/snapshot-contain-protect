@@ -293,6 +293,50 @@ func (s *Store) subtree(ctx context.Context, root Snapshot) ([]Snapshot, error) 
 	return out, nil
 }
 
+// Reparent moves every child of oldParent to newParent. Retention uses it: a
+// pruned node in the middle of the graph must not orphan the work that came
+// after it.
+func (s *Store) Reparent(ctx context.Context, oldParent string, newParent *string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE snapshots SET parent_id = ? WHERE parent_id = ?`, newParent, oldParent)
+	return err
+}
+
+// ManualAncestors returns the identifier of every snapshot that a manual
+// snapshot descends from, including the manual snapshots themselves.
+// Retention never removes one of these.
+func (s *Store) ManualAncestors(ctx context.Context, worksetID string) (map[string]bool, error) {
+	list, err := s.ListSnapshots(ctx, worksetID)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]Snapshot, len(list))
+	for _, sn := range list {
+		byID[sn.ID] = sn
+	}
+
+	protected := map[string]bool{}
+	for _, sn := range list {
+		if sn.Auto {
+			continue
+		}
+		for cur := sn; ; {
+			if protected[cur.ID] {
+				break // Already walked, or the graph has a cycle.
+			}
+			protected[cur.ID] = true
+			if cur.ParentID == nil {
+				break
+			}
+			parent, ok := byID[*cur.ParentID]
+			if !ok {
+				break
+			}
+			cur = parent
+		}
+	}
+	return protected, nil
+}
+
 // Ancestors returns the parent chain of a node, nearest first.
 func (s *Store) Ancestors(ctx context.Context, id string) ([]Snapshot, error) {
 	var out []Snapshot

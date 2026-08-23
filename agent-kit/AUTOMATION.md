@@ -22,6 +22,11 @@ staggered schedule keeps human review load flat at 1 repo per day.
 | `kern` | Wednesday | `./verify/verify.sh` | issues, Play Store reviews |
 | `blackarrow` | Thursday | `./verify/verify.sh` | design partner email, issues |
 | — | Friday | — | reserved for overflow and releases |
+| `snapshot-contain-protect` | unassigned | `./verify/verify.sh` | own issues |
+
+`snapshot-contain-protect` finished `SETUP.md` on 2026-08-23 with a green
+gate and a queue of 4 ready items. It has no day yet: every weekday except
+Friday is taken, and Friday is reserved. The human assigns its day.
 
 Rules for the register:
 

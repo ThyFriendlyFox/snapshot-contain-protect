@@ -51,7 +51,7 @@ accidentally re-added. Gitignore it at creation time.)
 
 ## Running
 
-Each iteration: read the prompt → work → `{{VERIFY_CMD}}` → commit at
+Each iteration: read the prompt → work → `./verify/verify.sh` → commit at
 any boundary reached → increment `iteration`. The loop runs with
 `WEEKLY.md` step 3 as its outer frame and stops when:
 

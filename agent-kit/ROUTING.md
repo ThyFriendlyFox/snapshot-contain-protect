@@ -23,7 +23,7 @@ already defines.
 | CI is missing or broken, workflows need creating | `CI.md` | Source blocks for `.github/workflows/`. |
 | Understanding the codebase before a change | `docs/ARCHITECTURE.md` | Parts, data flow, boundaries. |
 | Adding/changing any config option | `docs/CONFIGURATION.md` | Every knob lands in its table, same PR. |
-| Touching the pluggable seam (adapters/providers/backends) | `docs/ADAPTERS.md` | Includes the new-adapter contract. |
+|  Touching the pluggable seam (a filesystem backend) | `docs/BACKENDS.md` | Includes the new-adapter contract. |
 | Judging whether a feature is worth building, or writing roadmap items | `docs/USE-CASES.md` | Every ROADMAP item traces to a use case here. |
 | Writing ANY user-facing text (docs, UI copy, errors, release notes) | `docs/STYLE.md` | One voice, enforced terms table. |
 | Writing YOUR OWN words — commits, PR bodies, reports, devlog entries | `TONE.md` | The agent's voice. Always in effect, like AGENTS.md. |
@@ -41,6 +41,6 @@ already defines.
 ## Standing rules (apply in every instance)
 
 - Docs move with behavior: STATUS.md, CHANGELOG.md, ROADMAP.md updates land in the same commit/PR as the change they describe.
-- Commit at boundaries with evidence in the message. Never commit directly to `{{DEFAULT_BRANCH}}`.
+- Commit at boundaries with evidence in the message. Never commit directly to `main`.
 - Report outcomes faithfully: failing is reported as failing, with output.
 - Scope is what the current roadmap item names — no side quests. Defects found on the way get fixed if they block the item, otherwise queued in ROADMAP.md.

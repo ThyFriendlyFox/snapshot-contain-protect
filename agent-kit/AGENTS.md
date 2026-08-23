@@ -6,29 +6,51 @@ When this conflicts with intuition, this wins.
 ## Commands
 
 ```sh
-{{BUILD_CMD}}      # build
-{{TEST_CMD}}       # tests
-{{LINT_CMD}}       # lint / format check
-{{VERIFY_CMD}}     # full health gate — must pass before any push
+go build ./...      # build
+go test ./...       # tests
+gofmt -l cmd internal && go vet ./...       # lint / format check
+./verify/verify.sh     # full health gate — must pass before any push
 ```
 
-Requires {{MIN_RUNTIME}}.
+Requires Go 1.25.
 
 ## Invariants — never regress these
 
-<!-- SETUP fills this with the repo's 3–10 load-bearing decisions.
-     Architecture, not style. If the repo already has an AGENTS.md,
-     its invariants live here (or this section points there). -->
-
-1. …
+1. **The engine interface is the only way to touch a filesystem.** No
+   package above `internal/engine` runs `btrfs`, links a file, or walks
+   a snapshot tree. A new filesystem is a new backend, not a branch in
+   the daemon.
+2. **The daemon binds loopback only.** The service has no
+   authentication. `checkLoopback` refuses any other address, and that
+   check never becomes a flag.
+3. **History is append-only.** A restore adds a node whose parent is the
+   restored snapshot. Only an explicit prune removes a node.
+4. **A restore needs `confirm: true`.** An agent must not roll back by
+   accident.
+5. **Retention never removes a manual snapshot, and never removes an
+   ancestor of one.** The 50-snapshot budget applies to `auto` nodes
+   only.
+6. **A pruned node hands its children to its parent.** The graph stays
+   connected; a dangling `parent_id` is a defect.
+7. **Snapshot creation copies no data.** Btrfs snapshots and the copy
+   backend's hardlinks both cost inodes, not bytes. A backend that
+   copies a working set fails the point of the tool.
+8. **The five verbs keep their shapes.** START.md section 5 defines the
+   request and response JSON. A change there breaks every agent that
+   calls the service.
+9. **The store owns the schema.** Migrations are append-only files under
+   `internal/store/migrations/`; an existing migration is never edited.
 
 ## Landmine map
 
-<!-- Places where the obvious change is the wrong change. -->
-
 | Area | Why it bites |
 |---|---|
-| `path/…` | … |
+| `internal/engine/copy.go` | Hardlinks share inodes. An in-place write to a live file also rewrites the snapshot. Restore copies bytes on purpose; do not "optimise" it into a link. |
+| `internal/api/retention.go` | The prune loop deletes rows as it goes. Re-read each node before reparenting, or the foreign key fails on a parent that is already gone. |
+| `internal/engine/diff.go` | The differ compares size and modification time, never content. A test that writes two files in the same millisecond can see them as equal; set the time explicitly. |
+| `internal/engine/btrfs.go` | Every source path must be its own subvolume. `btrfs subvolume snapshot` on a plain directory fails, and the error names the path, not the cause. |
+| `internal/store/store.go` | The database runs with one connection on purpose. Adding parallelism reintroduces `SQLITE_BUSY` under snapshot bursts. |
+| `internal/api/service.go` | Every write path takes the per-workset lock. A restore and a snapshot on the same paths at once tangles the graph. |
 
 ## House style
 
@@ -39,8 +61,8 @@ Requires {{MIN_RUNTIME}}.
 
 ## Process rules
 
-- Branch from `{{DEFAULT_BRANCH}}`; never commit to it directly.
-- `{{VERIFY_CMD}}` green before every push. Flaky gate → fix or
+- Branch from `main`; never commit to it directly.
+- `./verify/verify.sh` green before every push. Flaky gate → fix or
   quarantine in the same PR; never route around it.
 - After adding/removing/renaming source files, run the stack's
   regeneration step (project gen, lockfile, tidy) and commit the result.

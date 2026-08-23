@@ -1,6 +1,6 @@
 # SECURITY.md
 
-- Report vulnerabilities privately to **{{SECURITY_EMAIL}}** or via
+- Report vulnerabilities privately to **thyfriendlyfox@gmail.com** or via
   GitHub Security Advisories ("Report a vulnerability" on the Security
   tab). **Never open a public issue for a vulnerability.**
 - Acknowledgment within 72 hours; fix-or-plan within 14 days;

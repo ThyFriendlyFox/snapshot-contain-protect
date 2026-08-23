@@ -8,7 +8,7 @@
 | Dependency updates | Weekly (automated) | Merge green Dependabot PRs; batch minors |
 | Security advisories | Immediately | SECURITY.md |
 | Stale sweep | Automated | `stale.yml` (CI.md) |
-| Health check | Per PR + nightly | `{{VERIFY_CMD}}` in CI |
+| Health check | Per PR + nightly | `./verify/verify.sh` in CI |
 
 ## Triage labels
 
@@ -28,5 +28,5 @@ Every deprecation gets a CHANGELOG entry under "Deprecated".
 
 ## Bus factor
 
-Maintainers: <!-- handles -->. If unmaintained, the intent is:
-<!-- archive with notice / hand to org / bless a fork -->.
+Maintainers: @ThyFriendlyFox. If unmaintained, the intent is: archive with a
+notice that points at the last green gate and the open queue.

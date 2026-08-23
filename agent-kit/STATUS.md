@@ -6,12 +6,24 @@ behavior change. The weekly cycle (WEEKLY.md step 5) refreshes it.
 
 | Area | State | Evidence |
 |---|---|---|
-| <area> | ✅ / 🚧 / ❌ / 🧊 | `{{VERIFY_CMD}}` green at `<commit>` / run link / tag |
+| Engine interface | ✅ | `./verify/verify.sh` green; 4 operations, 4 backends |
+| Copy backend | ✅ | 9 engine tests; 100 snapshots of 200 files stay under 100 MB |
+| Btrfs backend | 🚧 | Written and unit-tested through a command seam. Unproven on a Btrfs host: the live gate skips here. ROADMAP item 1. |
+| APFS backend | ❌ | Stub. Refuses with "not implemented". |
+| VSS backend | ❌ | Stub. Refuses with "not implemented". |
+| SQLite store | ✅ | 10 store tests; the graph survives a reopen |
+| Daemon, 5 verbs | ✅ | 20 API tests; a manual run snapshotted in 1 ms and restored a working set |
+| snapctl client | ✅ | 5 client tests against a real service |
+| Implicit checkpoints | ✅ | 6 retention tests; the 50-snapshot budget holds |
+| Container layer | 🧊 | Seam only. START.md puts it after step 5; the MVP stops at step 5. |
+| CI | ✅ | `.github/workflows/ci.yml` runs the same command as local |
+| Acceptance test (START.md section 10) | ❌ | Needs a Btrfs host with a 5 GB working set. ROADMAP item 1. |
 
 States: ✅ done (gated) · 🚧 in progress · ❌ not started · 🧊 frozen/won't do.
 
 ## Current week
 
-- **Shipping:** <the in-progress Feature Queue item, or "between cycles">
-- **Last release:** <tag> — <date>
-- **Known red:** <any failing gate + the plan for it, or "none">
+- **Shipping:** between cycles. The MVP landed; ROADMAP item 1 is next.
+- **Last release:** v0.1.0 — 2026-08-23
+- **Known red:** none. The gate is green. The Btrfs backend is untested on a
+  Btrfs host, which the gate reports as a loud skip and not as a pass.

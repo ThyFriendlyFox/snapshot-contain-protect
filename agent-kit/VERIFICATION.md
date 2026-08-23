@@ -1,11 +1,28 @@
 # VERIFICATION.md — one command answers "is this repo healthy"
 
-`{{VERIFY_CMD}}` runs, in order:
+`./verify/verify.sh` runs, in order:
 
-1. Lint / format check — `{{LINT_CMD}}`
-2. Build — `{{BUILD_CMD}}`
-3. Tests — `{{TEST_CMD}}`
-4. <repo-specific gates — one script per gate, each independently runnable>
+1. Format check — `gofmt -l cmd internal`
+2. Vet — `go vet ./...`
+3. Build — `go build ./...`
+4. Tests — `go test ./...`
+5. The live Btrfs gate — `go test -tags btrfs_live ./internal/engine/ -run TestBtrfsLive -v`
+
+## The Btrfs gate
+
+Step 5 runs only when the host has the `btrfs` command. On any other host it
+prints "SKIPPED LOUDLY" and states that the Btrfs backend is unproven there.
+It never passes silently.
+
+To run it, point it at a writable directory on a Btrfs filesystem:
+
+```sh
+export SNAPSHOT_BTRFS_TEST_ROOT=/mnt/btrfs/snapshot-test
+./verify/verify.sh
+```
+
+The gate creates a subvolume, snapshots it, changes a file, restores it, and
+checks that the file came back. It removes what it made.
 
 ## Rules
 

@@ -1,0 +1,29 @@
+name: Release
+on:
+  push:
+    tags: ['v*.*.*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build artifacts
+        run: |
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64; do
+            os=${target%/*}; arch=${target#*/}
+            GOOS=$os GOARCH=$arch go build -o dist/snapshotd-$os-$arch ./cmd/snapshotd
+            GOOS=$os GOARCH=$arch go build -o dist/snapctl-$os-$arch ./cmd/snapctl
+          done
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/*

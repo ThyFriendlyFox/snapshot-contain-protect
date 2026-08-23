@@ -3,6 +3,22 @@
 Run this once, when this kit lands in a repo and placeholders still exist.
 When finished, no `{{PLACEHOLDER}}` remains anywhere in `agent-kit/`.
 
+**Status: done, 2026-08-23.** This file keeps its placeholder names so the
+process stays readable. Every other kit file carries the real values:
+
+| Placeholder | Value in this repo |
+|---|---|
+| `{{PROJECT_NAME}}` | Snapshot |
+| `{{REPO_SLUG}}` | ThyFriendlyFox/snapshot-contain-protect |
+| `{{DEFAULT_BRANCH}}` | main |
+| `{{BUILD_CMD}}` | `go build ./...` |
+| `{{TEST_CMD}}` | `go test ./...` |
+| `{{LINT_CMD}}` | `gofmt -l cmd internal && go vet ./...` |
+| `{{VERIFY_CMD}}` | `./verify/verify.sh` |
+| `{{MIN_RUNTIME}}` | Go 1.25 |
+| `{{SECURITY_EMAIL}}` | thyfriendlyfox@gmail.com |
+| `{{PKG_ECOSYSTEM}}` | gomod |
+
 ## 1. Survey the repo
 
 Read the tree, the manifest(s), any existing README/docs/CI. Determine:
@@ -44,7 +60,7 @@ Populate `docs/` from the repo itself:
 
 - `docs/ARCHITECTURE.md` — parts table, one numbered data flow, boundaries.
 - `docs/CONFIGURATION.md` — every real option with its real default.
-- `docs/ADAPTERS.md` — rename to the repo's word for its pluggable seam
+- `docs/BACKENDS.md` — rename to the repo's word for its pluggable seam
   (providers/backends/drivers); delete only if no such seam exists.
 - `docs/USE-CASES.md` — 5–10 same-shape cases. These feed the roadmap:
   every Feature Queue item must trace to a case here.

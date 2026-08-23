@@ -4,7 +4,7 @@
      messages, release notes. Based on Simplified Technical English.
      AGENTS.md house style governs code; this file governs words. -->
 
-{{PROJECT_NAME}} uses one voice for every text.
+Snapshot uses one voice for every text.
 The rules keep the text short, clear and easy to translate.
 
 ## Rules
@@ -22,17 +22,34 @@ The rules keep the text short, clear and easy to translate.
 11. Use a table for a set of values.
 12. Write numbers as digits.
 
-## User interface
+## Command line and API text
 
-<!-- Keep or delete per product. The strong default: -->
-The user interface holds no explanatory text.
-State the thing; never reassure about it.
-Do not add a tooltip, a hint or a help line unless a human asks for one.
+Snapshot has no graphical interface. The user-facing text is the `snapctl`
+output, the `-h` usage block, and the `error` field the daemon returns.
+
+State the thing; never reassure about it. An error says what is wrong and
+what the caller can do: "snapshot has children; set cascade=true to remove
+the subtree". Do not add a hint line unless a human asks for one.
+
+One exception carries a warning, because the filesystem cannot enforce it:
+`snapctl restore` prints that processes and sockets do not roll back.
 
 ## Terms
 
-<!-- One word for one idea, enforced. Grow this table as terms appear. -->
+One word for one idea, enforced. Grow this table as terms appear.
 
 | Use | Do not use |
 |---|---|
-| <term> | <its synonyms> |
+| snapshot | checkpoint, save point, restore point, backup |
+| restore | roll back, revert, undo, rewind |
+| prune | delete a snapshot, clean up, garbage collect |
+| workset | working set, project, watched paths, scope |
+| backend | adapter, driver, provider, plugin |
+| handle | snapshot path, subvolume, shadow copy |
+| graph | tree, history, timeline |
+| auto snapshot | implicit checkpoint, automatic save |
+| daemon | server, service, agent |
+| the gate | CI, the checks, the build |
+
+"Checkpoint" stays in one place: the container layer, where it names a CRIU
+process checkpoint and not a filesystem snapshot.

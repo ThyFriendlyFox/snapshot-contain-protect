@@ -1,29 +1,42 @@
 # Configuration
 
-<!-- Every knob, in one table, with defaults. If configuration lives in
-     more than one place, this file lists all of them and which wins. -->
+Snapshot reads command line flags. Two flags also read an environment
+variable, which is what a service manager sets. There is no configuration
+file: the daemon holds 5 options, and a file would be a second source of
+truth.
 
-{{PROJECT_NAME}} reads <the config file/mechanism>. <How the user opens or edits it.>
-
-| Platform | Path |
+| Platform | Default data directory |
 |---|---|
-| macOS | `…` |
-| Windows | `…` |
-| Linux | `…` |
+| Linux | `$HOME/.local/share/snapshot` |
+| macOS | `$HOME/.local/share/snapshot` |
+| Windows | `%USERPROFILE%\.local\share\snapshot` |
 
-<Behavior rules: what happens at first start, with an incomplete file,
-with a damaged file. A damaged config must never cause a crash —
-defaults plus a log line.>
+The data directory holds `snapshots/` and `snapshot.db`. The daemon creates
+both at first start. A missing directory is created; it is not an error.
+
+A damaged database stops the daemon at start with the SQLite error. The
+daemon does not repair or delete it, because the graph is the only record of
+what the snapshots on disk mean.
 
 ## Fields
 
 | Field | Type | Default | Use |
 |---|---|---|---|
-| `…` | … | `…` | <one line> |
+| `-addr` | string | `127.0.0.1:7099` | Loopback address to listen on. A non-loopback address is refused. |
+| `-data-dir` | path | `$HOME/.local/share/snapshot` | Holds `snapshots/` and `snapshot.db`. |
+| `-backend` | string | `auto` | `auto`, `btrfs`, `copy`, `apfs` or `vss`. `auto` picks Btrfs when it runs here, otherwise `copy`. A named backend that cannot run is an error. |
+| `-auto-keep` | integer | `50` | Auto snapshots kept per workset. `0` turns retention off. |
+| `-prune-interval` | duration | `10m` | How often retention runs. `0` turns the timer off. |
+| `-verbose` | boolean | `false` | Log at debug level. |
 
-<!-- Rules for this table:
-     · Every shipped option appears here — an undocumented option is a
-       defect (gate it in VERIFICATION.md if the stack allows).
-     · New options land in this table in the same PR that adds them.
-     · Defaults shown here are the real defaults in code, not intended
-       ones. -->
+## Environment variables
+
+| Variable | Replaces | Use |
+|---|---|---|
+| `SNAPSHOT_ADDR` | `-addr` | The daemon and `snapctl` both read it. |
+| `SNAPSHOT_BACKEND` | `-backend` | Pin a backend for a service unit. |
+| `SNAPSHOT_DATA_DIR` | `-data-dir` | Move the data directory. |
+| `SNAPSHOT_BTRFS_TEST_ROOT` | none | The live Btrfs gate reads it. See VERIFICATION.md. |
+
+A flag beats an environment variable. An environment variable beats the
+default.

@@ -81,7 +81,7 @@ follows START.md section 9 and the gaps the MVP left.
 
 | Week | Feature | Release | Evidence |
 |---|---|---|---|
-| 2026-08-23 | MVP: engine, store, daemon, client, retention | v0.1.0 | `./verify/verify.sh` green at `HEAD`; 53 tests, 0 failures |
+| 2026-08-23 | MVP: engine, store, daemon, client, retention | unreleased | `./verify/verify.sh` green at `HEAD`; 53 tests, 0 failures |
 
 ## Explicitly not doing
 

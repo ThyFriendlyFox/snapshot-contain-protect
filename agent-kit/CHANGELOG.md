@@ -11,7 +11,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Versioning: [SemVer](
 ### Fixed
 ### Security
 
-## [0.1.0] - 2026-08-23
+## [0.1.0] - unreleased
+
+The MVP. It is not tagged yet: `RELEASING.md` step 4 cuts `v0.1.0` when the
+human is ready for the release workflow to publish binaries.
 ### Added
 - `snapshotd`, a local service on `127.0.0.1:7099` with 5 verbs:
   `POST /snapshot`, `GET /snapshots`, `GET /diff`, `POST /restore` and

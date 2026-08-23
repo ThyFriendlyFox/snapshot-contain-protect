@@ -23,7 +23,7 @@ States: ✅ done (gated) · 🚧 in progress · ❌ not started · 🧊 frozen/w
 
 ## Current week
 
-- **Shipping:** between cycles. The MVP landed; ROADMAP item 1 is next.
-- **Last release:** v0.1.0 — 2026-08-23
+- **Shipping:** the MVP, built from `START.md` build order steps 1 to 5. ROADMAP item 1 is next.
+- **Last release:** none. The MVP sits on `claude/build-agent-kit-mvp-rryrb6`, unmerged and untagged. `RELEASING.md` cuts `v0.1.0`.
 - **Known red:** none. The gate is green. The Btrfs backend is untested on a
   Btrfs host, which the gate reports as a loud skip and not as a pass.

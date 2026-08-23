@@ -59,6 +59,9 @@ declaration they act on.
 
 A restore needs `confirm: true`, so an agent cannot roll back by accident.
 Before it restores, the service takes a safety snapshot of the current state.
+A restore of a workset with several paths restores them one at a time. If one
+path fails, the paths before it are already back; the safety snapshot is the
+way out.
 
 ## The graph
 

@@ -4,7 +4,7 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
-echo "== 1/5 format =="
+echo "== 1/6 format =="
 unformatted=$(gofmt -l cmd internal)
 if [ -n "$unformatted" ]; then
   echo "gofmt needs to run on:"
@@ -12,13 +12,13 @@ if [ -n "$unformatted" ]; then
   exit 1
 fi
 
-echo "== 2/5 vet =="
+echo "== 2/6 vet =="
 go vet ./...
 
-echo "== 3/5 build =="
+echo "== 3/6 build =="
 go build ./...
 
-echo "== 4/5 test =="
+echo "== 4/6 test =="
 go test ./...
 
 echo "== 5/6 btrfs gate =="

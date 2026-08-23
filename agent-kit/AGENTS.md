@@ -40,6 +40,11 @@ Requires Go 1.25.
    calls the service.
 9. **The store owns the schema.** Migrations are append-only files under
    `internal/store/migrations/`; an existing migration is never edited.
+10. **A restore returns the exact prior file state.** Modes, including
+    setuid, setgid and sticky, survive. `open(2)` and `mkdir(2)` apply the
+    umask, so the mode is set after the write, never by the create call.
+11. **A workset never contains the snapshot root.** Otherwise a snapshot
+    walks into the handle it is writing.
 
 ## Landmine map
 
@@ -51,6 +56,9 @@ Requires Go 1.25.
 | `internal/engine/btrfs.go` | Every source path must be its own subvolume. `btrfs subvolume snapshot` on a plain directory fails, and the error names the path, not the cause. |
 | `internal/store/store.go` | The database runs with one connection on purpose. Adding parallelism reintroduces `SQLITE_BUSY` under snapshot bursts. |
 | `internal/api/service.go` | Every write path takes the per-workset lock. A restore and a snapshot on the same paths at once tangles the graph. |
+| Workset paths | A symlinked directory passes `os.Stat` but a tree walk does not descend through it. Validate with `os.Lstat`, and resolve the link when the workset is declared. |
+| Prune and retention | Free the handle before the row. A row without a handle breaks every later diff and restore of that node. |
+| The safety snapshot | It must never block a restore. The state that most needs a rollback is often the state that cannot be snapshotted. |
 
 ## House style
 

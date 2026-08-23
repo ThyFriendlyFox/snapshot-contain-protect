@@ -90,12 +90,18 @@ These are real. They have no workaround at the filesystem layer.
    writer that creates a new file and renames it over the old one is safe,
    and that is what editors and most agents do. Use Btrfs for work that
    matters.
-6. **The Btrfs backend is unproven on a Btrfs host.** It is written and unit
+6. **A workset path must be a real directory, not a symlink.** A tree walk
+   does not descend through a symlinked root. `snapctl workset` resolves the
+   link for you and stores the directory it points at.
+7. **A workset path must not contain the data directory.** A snapshot of it
+   would contain itself. The daemon refuses the snapshot and says so.
+8. **The Btrfs backend is unproven on a Btrfs host.** It is written and unit
    tested through a command seam. No Btrfs machine has run it yet. The gate
    reports this as a loud skip, never as a pass.
 
 Limits 1 and 2 disappear inside a container with CRIU. Limit 3 never
-disappears.
+disappears. Limits 6 and 7 are enforced: the daemon refuses the workset
+rather than storing an empty snapshot.
 
 ## Layout
 

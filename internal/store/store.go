@@ -267,7 +267,7 @@ func (s *Store) DeleteSnapshot(ctx context.Context, id string, cascade bool) ([]
 		return nil, ErrHasChildren
 	}
 
-	order, err := s.subtree(ctx, target)
+	order, err := s.Subtree(ctx, target)
 	if err != nil {
 		return nil, err
 	}
@@ -280,8 +280,10 @@ func (s *Store) DeleteSnapshot(ctx context.Context, id string, cascade bool) ([]
 	return order, nil
 }
 
-// subtree returns the node and every descendant, parents before children.
-func (s *Store) subtree(ctx context.Context, root Snapshot) ([]Snapshot, error) {
+// Subtree returns the node and every descendant, parents before children. A
+// caller that frees handles walks it backwards, so a child never outlives its
+// parent's row.
+func (s *Store) Subtree(ctx context.Context, root Snapshot) ([]Snapshot, error) {
 	out := []Snapshot{root}
 	for i := 0; i < len(out); i++ {
 		kids, err := s.Children(ctx, out[i].ID)

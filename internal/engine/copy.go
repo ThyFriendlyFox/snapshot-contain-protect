@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 // Copy is the portable backend. It snapshots by hardlinking every file into
@@ -35,7 +36,7 @@ func (c *Copy) Available() error {
 }
 
 func (c *Copy) Create(ctx context.Context, id string, sources []string) (string, error) {
-	if err := checkSources(sources); err != nil {
+	if err := checkSources(c.root, sources); err != nil {
 		return "", err
 	}
 	handle := filepath.Join(c.root, id)
@@ -93,15 +94,21 @@ const (
 
 // cloneTree rebuilds src at dst. Sockets, devices and pipes are skipped: a
 // working set is files, and an agent cannot roll one of those back anyway.
+//
+// Directories are made writable first and given their real mode at the end.
+// A source tree may hold a read-only directory, and a destination copy of it
+// cannot take children.
 func cloneTree(ctx context.Context, src, dst string, mode cloneMode) error {
 	srcInfo, err := os.Stat(src)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dst, srcInfo.Mode().Perm()); err != nil {
+	if err := os.MkdirAll(dst, 0o700); err != nil {
 		return err
 	}
-	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+
+	dirs := []dirMode{{path: dst, mode: srcInfo.Mode()}}
+	err = filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -122,7 +129,11 @@ func cloneTree(ctx context.Context, src, dst string, mode cloneMode) error {
 		}
 		switch {
 		case fi.IsDir():
-			return os.MkdirAll(target, fi.Mode().Perm())
+			if err := os.MkdirAll(target, 0o700); err != nil {
+				return err
+			}
+			dirs = append(dirs, dirMode{path: target, mode: fi.Mode()})
+			return nil
 		case fi.Mode()&fs.ModeSymlink != 0:
 			dest, err := os.Readlink(p)
 			if err != nil {
@@ -135,6 +146,34 @@ func cloneTree(ctx context.Context, src, dst string, mode cloneMode) error {
 			return nil
 		}
 	})
+	if err != nil {
+		return err
+	}
+	return applyDirModes(dirs)
+}
+
+// dirMode remembers a directory's real mode until its children exist.
+type dirMode struct {
+	path string
+	mode fs.FileMode
+}
+
+// applyDirModes sets directory modes deepest first, so a read-only parent
+// never blocks a child that still needs its own mode.
+func applyDirModes(dirs []dirMode) error {
+	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i].path) > len(dirs[j].path) })
+	for _, d := range dirs {
+		if err := os.Chmod(d.path, permOf(d.mode)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// permOf keeps the permission bits and the setuid, setgid and sticky bits.
+// Everything else is the file type, which chmod does not set.
+func permOf(m fs.FileMode) fs.FileMode {
+	return m & (fs.ModePerm | fs.ModeSetuid | fs.ModeSetgid | fs.ModeSticky)
 }
 
 func placeFile(src, dst string, fi fs.FileInfo, mode cloneMode) error {
@@ -157,7 +196,7 @@ func writeCopy(src, dst string, fi fs.FileInfo) error {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fi.Mode().Perm())
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
@@ -166,6 +205,11 @@ func writeCopy(src, dst string, fi fs.FileInfo) error {
 		return err
 	}
 	if err := out.Close(); err != nil {
+		return err
+	}
+	// open(2) applies the umask and drops setuid, setgid and sticky. A restore
+	// must return the exact prior file state, so set the mode after the write.
+	if err := os.Chmod(dst, permOf(fi.Mode())); err != nil {
 		return err
 	}
 	// The differ compares size and modification time, so the time must survive.

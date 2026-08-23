@@ -55,10 +55,13 @@ func (s *Service) pruneAutoLocked(ctx context.Context, worksetID string) error {
 		if err := s.store.Reparent(ctx, current.ID, current.ParentID); err != nil {
 			return err
 		}
-		if _, err := s.store.DeleteSnapshot(ctx, sn.ID, false); err != nil {
+		// Free the handle first. A row that outlives its handle breaks every
+		// later diff and restore of that node; a handle that outlives its row
+		// is disk this pass can never find again.
+		if err := s.engine.Delete(ctx, current.FSHandle); err != nil {
 			return err
 		}
-		if err := s.engine.Delete(ctx, sn.FSHandle); err != nil {
+		if _, err := s.store.DeleteSnapshot(ctx, current.ID, false); err != nil {
 			return err
 		}
 	}

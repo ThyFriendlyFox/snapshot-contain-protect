@@ -41,6 +41,43 @@ Evidence: <commit / tag / gate run / screenshot>
 
 <!-- Entries below, newest first. -->
 
+## 2026-08-23 — A review found 8 defects in the MVP, 2 of them data loss
+
+I asked a second agent to attack the code I had just written. It found 8
+defects and proved 7 of them by running them. I fixed all 8 the same day,
+before the branch went anywhere.
+
+Two would have lost a user's files. If a person pointed a workset at a
+symlinked directory, which is a common layout, the snapshot stored nothing:
+a tree walk does not descend through a symlinked root, and `os.Stat` follows
+the link so the check passed. Every checkpoint was empty, every diff said
+nothing changed, and the agent believed it was protected. A restore then
+replaced the symlink with an empty directory. The workset now resolves the
+link when it is declared, and the engine refuses a symlinked path outright.
+
+The second one is worse in a quiet way: a restore failed when a declared
+path had been deleted. That is the exact case a rollback exists for. The
+service took its safety snapshot first, the snapshot could not read a path
+that was gone, and the whole restore stopped with a 500. The safety snapshot
+now warns and the restore runs.
+
+The rest: a workset that contained the data directory made a snapshot walk
+into the handle it was writing; a restore applied the daemon's umask and
+dropped setuid, setgid and sticky bits, against the spec's promise of the
+exact prior file state; a read-only directory in the working set failed the
+whole snapshot; prune and retention deleted the graph row before the
+snapshot on disk, so a failed delete stranded data no row could reach; a
+missing workset path returned 500 instead of 400; and on Btrfs a staged
+subvolume left by an interrupted restore was cleaned up with `rmdir`, which
+cannot remove a subvolume, so every later restore of that path failed.
+
+Each fix landed with a test. I ran the 5 new service tests against the old
+code first and watched all 5 fail, so I know they test the defect and not my
+memory of it.
+
+Evidence: `./verify/verify.sh` green. 63 tests, 0 failures, clean under
+`-race`.
+
 ## 2026-08-23 — Installed the agent kit and built the Snapshot MVP
 
 I started with an empty repository: a spec in `START.md` and this kit. The

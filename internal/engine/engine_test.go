@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -309,4 +310,121 @@ func read(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+func TestCopyRejectsASymlinkedWorksetPath(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	writeFile(t, filepath.Join(real, "important.txt"), "important")
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+
+	e := NewCopy(filepath.Join(base, "snapshots"))
+	// A tree walk does not descend through a symlinked root. Snapshotting it
+	// would store nothing and a restore would replace the link with an empty
+	// directory.
+	_, err := e.Create(ctx, "01AAA", []string{link})
+	if !errors.Is(err, ErrBadSource) {
+		t.Fatalf("error = %v, want ErrBadSource", err)
+	}
+	if _, err := os.Readlink(link); err != nil {
+		t.Fatalf("the symlink did not survive: %v", err)
+	}
+}
+
+func TestCopyRejectsAPathThatContainsTheSnapshotRoot(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+	// The default data directory sits under the home directory, so a workset
+	// of the home directory would snapshot the snapshot root.
+	root := filepath.Join(base, "data", "snapshots")
+	e := NewCopy(root)
+	if err := e.Available(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Create(ctx, "01AAA", []string{base}); !errors.Is(err, ErrBadSource) {
+		t.Fatalf("error = %v, want ErrBadSource", err)
+	}
+	if _, err := e.Create(ctx, "01AAA", []string{root}); !errors.Is(err, ErrBadSource) {
+		t.Fatalf("error for the root itself = %v, want ErrBadSource", err)
+	}
+}
+
+func TestCopyRestoreReturnsExactModes(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+	work := filepath.Join(base, "work")
+	writeFile(t, filepath.Join(work, "wide.sh"), "#!/bin/sh\n")
+	writeFile(t, filepath.Join(work, "sticky", "a.txt"), "a")
+	if err := os.Chmod(filepath.Join(work, "wide.sh"), 0o776); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(work, "sticky"), 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	e := NewCopy(filepath.Join(base, "snapshots"))
+	handle, err := e.Create(ctx, "01AAA", []string{work})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Delete the file and narrow the directory. A chmod of the live file would
+	// not prove anything: the copy backend hardlinks, so the stored name
+	// points at the same inode and the same mode.
+	if err := os.Remove(filepath.Join(work, "wide.sh")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(work, "sticky"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Restore(ctx, handle); err != nil {
+		t.Fatal(err)
+	}
+
+	// open(2) and mkdir(2) apply the umask. A restore must not.
+	if got := modeOf(t, filepath.Join(work, "wide.sh")); got != 0o776 {
+		t.Errorf("file mode = %#o, want 0776", got)
+	}
+	if got := modeOf(t, filepath.Join(work, "sticky")); got != 0o777 {
+		t.Errorf("directory mode = %#o, want 0777", got)
+	}
+}
+
+func TestCopyHandlesAReadOnlyDirectory(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+	work := filepath.Join(base, "work")
+	locked := filepath.Join(work, "locked")
+	writeFile(t, filepath.Join(locked, "a.txt"), "a")
+	if err := os.Chmod(locked, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+
+	e := NewCopy(filepath.Join(base, "snapshots"))
+	handle, err := e.Create(ctx, "01AAA", []string{work})
+	if err != nil {
+		t.Fatalf("snapshot of a read-only directory failed: %v", err)
+	}
+	if got := modeOf(t, filepath.Join(handle, subtreeName(0, work), "locked")); got != 0o555 {
+		t.Errorf("stored directory mode = %#o, want 0555", got)
+	}
+	if err := e.Restore(ctx, handle); err != nil {
+		t.Fatalf("restore of a read-only directory failed: %v", err)
+	}
+	if got := modeOf(t, locked); got != 0o555 {
+		t.Errorf("restored directory mode = %#o, want 0555", got)
+	}
+}
+
+func modeOf(t *testing.T, path string) os.FileMode {
+	t.Helper()
+	fi, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fi.Mode().Perm()
 }

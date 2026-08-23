@@ -32,3 +32,21 @@ human is ready for the release workflow to publish binaries.
 - A safety snapshot before every restore.
 - `./verify/verify.sh`, the health gate. It runs a live Btrfs test when the
   host has Btrfs and skips loudly when it does not.
+
+### Fixed before release
+- A workset that named a symlinked directory stored an empty snapshot, and a
+  restore of it replaced the symlink with an empty directory. `POST
+  /worksets` now resolves the link, and the engine refuses a symlinked path.
+- A restore failed when a declared path had been deleted, which is the case
+  a rollback exists for. The safety snapshot now warns and the restore runs.
+- A workset that contained the data directory made a snapshot walk into the
+  handle it was writing. The daemon refuses that workset.
+- A restore returned files with the daemon's umask applied and dropped
+  setuid, setgid and sticky bits.
+- A read-only directory in the working set made the whole snapshot fail.
+- Prune and retention removed the graph row before the snapshot on disk. A
+  failed delete left a snapshot no row could reach.
+- A missing or unreadable workset path returned 500. It returns 400.
+- On Btrfs, a staged subvolume left by an interrupted restore was cleaned up
+  with `rmdir`, which cannot remove a subvolume, and every later restore of
+  that path failed.

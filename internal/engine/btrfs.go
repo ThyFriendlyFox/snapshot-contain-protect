@@ -52,7 +52,7 @@ func (b *Btrfs) Available() error {
 }
 
 func (b *Btrfs) Create(ctx context.Context, id string, sources []string) (string, error) {
-	if err := checkSources(sources); err != nil {
+	if err := checkSources(b.root, sources); err != nil {
 		return "", err
 	}
 	handle := filepath.Join(b.root, id)
@@ -110,20 +110,44 @@ func (b *Btrfs) Restore(ctx context.Context, handle string) error {
 	for _, s := range m.Sources {
 		src := filepath.Join(handle, s.Dir)
 		staged := s.Path + ".snapshot-restore"
-		_ = os.RemoveAll(staged)
+
+		// A staged subvolume left by an interrupted restore is not a
+		// directory: rmdir refuses it, so only `subvolume delete` clears it.
+		// Without this, every later restore of this path fails on "File
+		// exists".
+		b.clearStaged(ctx, staged)
 
 		if _, err := b.run(ctx, "btrfs", "subvolume", "snapshot", src, staged); err != nil {
 			return fmt.Errorf("restore %s: %w", s.Path, err)
 		}
 		if _, err := b.run(ctx, "btrfs", "subvolume", "delete", s.Path); err != nil {
-			_, _ = b.run(ctx, "btrfs", "subvolume", "delete", staged)
+			b.clearStaged(ctx, staged)
 			return fmt.Errorf("restore %s: %w", s.Path, err)
 		}
 		if err := os.Rename(staged, s.Path); err != nil {
-			return fmt.Errorf("restore %s: rename staged subvolume: %w", s.Path, err)
+			// The live subvolume is already gone. Put the snapshot back at the
+			// declared path directly, so the working set is not left missing.
+			if _, rerr := b.run(ctx, "btrfs", "subvolume", "snapshot", src, s.Path); rerr != nil {
+				return fmt.Errorf("restore %s: rename staged subvolume: %w; the path is now missing and %s holds the data: %v",
+					s.Path, err, staged, rerr)
+			}
+			b.clearStaged(ctx, staged)
 		}
 	}
 	return nil
+}
+
+// clearStaged removes a staged subvolume, or a plain directory if that is
+// what is there. Both failures are ignored: the caller reports the operation
+// that matters.
+func (b *Btrfs) clearStaged(ctx context.Context, staged string) {
+	if _, err := os.Lstat(staged); err != nil {
+		return
+	}
+	if _, err := b.run(ctx, "btrfs", "subvolume", "delete", staged); err == nil {
+		return
+	}
+	_ = os.RemoveAll(staged)
 }
 
 func (b *Btrfs) cleanup(ctx context.Context, handle string, m manifest) {

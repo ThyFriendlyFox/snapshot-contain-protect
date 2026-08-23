@@ -128,7 +128,14 @@ func (s *Service) CreateWorkset(ctx context.Context, name string, paths []string
 		if !filepath.IsAbs(p) {
 			return store.Workset{}, badRequest(fmt.Sprintf("path %q is not absolute", p))
 		}
-		clean = append(clean, filepath.Clean(p))
+		// Store the path the filesystem will actually snapshot. A tree walk
+		// does not descend through a symlinked root, so a workset that names
+		// one would snapshot nothing.
+		resolved, err := filepath.EvalSymlinks(filepath.Clean(p))
+		if err != nil {
+			return store.Workset{}, badRequest(fmt.Sprintf("path %q: %v", p, err))
+		}
+		clean = append(clean, resolved)
 	}
 
 	existing, err := s.store.WorksetByName(ctx, name)
@@ -171,7 +178,7 @@ func (s *Service) CreateSnapshot(ctx context.Context, worksetName, label string,
 	start := s.now()
 	sn, err := s.snapshotLocked(ctx, w, label, auto, nil)
 	if err != nil {
-		return store.Snapshot{}, 0, err
+		return store.Snapshot{}, 0, asAPIError(err)
 	}
 	took := s.now().Sub(start)
 
@@ -264,13 +271,19 @@ func (s *Service) Restore(ctx context.Context, id string) (store.Snapshot, error
 
 	// The safety snapshot is the undo for the undo. An agent that rolls back
 	// to the wrong node can still reach the state it left.
+	//
+	// It must not block the restore. The state that most needs a rollback is
+	// the state that cannot be snapshotted: an agent that deleted a declared
+	// path leaves nothing to capture.
 	if _, err := s.snapshotLocked(ctx, w, "before restore of "+target.ID, true, nil); err != nil {
-		return store.Snapshot{}, fmt.Errorf("safety snapshot: %w", err)
+		s.log.Warn("safety snapshot failed; restoring anyway",
+			"workset", w.Name, "target", target.ID, "error", err)
 	}
 	if err := s.engine.Restore(ctx, target.FSHandle); err != nil {
-		return store.Snapshot{}, err
+		return store.Snapshot{}, asAPIError(err)
 	}
-	return s.snapshotLocked(ctx, w, "restore of "+target.ID, true, &target.ID)
+	sn, err := s.snapshotLocked(ctx, w, "restore of "+target.ID, true, &target.ID)
+	return sn, asAPIError(err)
 }
 
 // Prune removes a snapshot and its handle. It refuses a node with children
@@ -284,19 +297,45 @@ func (s *Service) Prune(ctx context.Context, id string, cascade bool) ([]store.S
 	m.Lock()
 	defer m.Unlock()
 
-	removed, err := s.store.DeleteSnapshot(ctx, id, cascade)
-	if errors.Is(err, store.ErrHasChildren) {
-		return nil, conflict("snapshot has children; set cascade=true to remove the subtree")
-	}
+	kids, err := s.store.Children(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	for _, sn := range removed {
+	if len(kids) > 0 && !cascade {
+		return nil, conflict("snapshot has children; set cascade=true to remove the subtree")
+	}
+	order, err := s.store.Subtree(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+
+	// The handle goes first, then the row. A row without a handle breaks
+	// every later diff and restore; a handle whose delete failed keeps its
+	// row, so the next prune can try again.
+	removed := make([]store.Snapshot, 0, len(order))
+	for i := len(order) - 1; i >= 0; i-- {
+		sn := order[i]
 		if err := s.engine.Delete(ctx, sn.FSHandle); err != nil {
 			return removed, fmt.Errorf("delete handle %s: %w", sn.FSHandle, err)
 		}
+		if _, err := s.store.DeleteSnapshot(ctx, sn.ID, false); err != nil {
+			return removed, err
+		}
+		removed = append(removed, sn)
 	}
 	return removed, nil
+}
+
+// asAPIError turns an engine complaint about the working set into a 400. The
+// caller declared those paths, so the caller is the one who can fix them.
+func asAPIError(err error) error {
+	if errors.Is(err, engine.ErrBadSource) {
+		return badRequest(err.Error())
+	}
+	if errors.Is(err, engine.ErrUnavailable) {
+		return unavailable(err.Error())
+	}
+	return err
 }
 
 func (s *Service) snapshotOr404(ctx context.Context, id string) (store.Snapshot, error) {

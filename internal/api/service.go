@@ -131,9 +131,17 @@ func (s *Service) CreateWorkset(ctx context.Context, name string, paths []string
 		// Store the path the filesystem will actually snapshot. A tree walk
 		// does not descend through a symlinked root, so a workset that names
 		// one would snapshot nothing.
-		resolved, err := filepath.EvalSymlinks(filepath.Clean(p))
+		//
+		// A path that does not exist yet is kept as written. A workset may be
+		// declared before the directory exists; the snapshot checks it again
+		// and refuses then.
+		cleaned := filepath.Clean(p)
+		resolved, err := filepath.EvalSymlinks(cleaned)
 		if err != nil {
-			return store.Workset{}, badRequest(fmt.Sprintf("path %q: %v", p, err))
+			if !errors.Is(err, os.ErrNotExist) {
+				return store.Workset{}, badRequest(fmt.Sprintf("path %q: %v", p, err))
+			}
+			resolved = cleaned
 		}
 		clean = append(clean, resolved)
 	}

@@ -422,3 +422,19 @@ func countFiles(t *testing.T, root string) int {
 	}
 	return count
 }
+
+func TestWorksetMayNameAPathThatDoesNotExistYet(t *testing.T) {
+	f := newFixture(t)
+	later := filepath.Join(filepath.Dir(f.work), "not-yet")
+	f.post("/worksets", worksetRequest{Name: "later", Paths: []string{later}}, http.StatusCreated, nil)
+
+	// The snapshot is where a missing path is refused, and it says so as a
+	// caller error.
+	f.post("/snapshot", snapshotRequest{Workset: "later"}, http.StatusBadRequest, nil)
+
+	if err := os.MkdirAll(later, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(later, "a.txt"), "a")
+	f.post("/snapshot", snapshotRequest{Workset: "later"}, http.StatusCreated, nil)
+}

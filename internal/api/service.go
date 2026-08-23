@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -199,9 +200,15 @@ func (s *Service) CreateSnapshot(ctx context.Context, worksetName, label string,
 	return sn, took, nil
 }
 
-// snapshotLocked writes one node. The caller holds the workset lock. parent
-// overrides the default parent, which a restore needs.
+// snapshotLocked writes one node over every path of the workset.
 func (s *Service) snapshotLocked(ctx context.Context, w store.Workset, label string, auto bool, parent *string) (store.Snapshot, error) {
+	return s.snapshotPathsLocked(ctx, w, w.Paths, label, auto, parent)
+}
+
+// snapshotPathsLocked writes one node over the given paths. The caller holds
+// the workset lock. parent overrides the default parent, which a restore
+// needs. paths is a subset only for a partial safety snapshot.
+func (s *Service) snapshotPathsLocked(ctx context.Context, w store.Workset, paths []string, label string, auto bool, parent *string) (store.Snapshot, error) {
 	if parent == nil {
 		if latest, err := s.store.LatestSnapshot(ctx, w.ID); err == nil {
 			parent = &latest.ID
@@ -211,7 +218,7 @@ func (s *Service) snapshotLocked(ctx context.Context, w store.Workset, label str
 	}
 
 	id := ulid.New()
-	handle, err := s.engine.Create(ctx, id, w.Paths)
+	handle, err := s.engine.Create(ctx, id, paths)
 	if err != nil {
 		return store.Snapshot{}, err
 	}
@@ -260,38 +267,88 @@ func (s *Service) Diff(ctx context.Context, fromID, toID string) (engine.Change,
 	return s.engine.Diff(ctx, from.FSHandle, to.FSHandle)
 }
 
+// RestoreResult is what a restore produced: the node it appended, the safety
+// snapshot it managed to take first, and what it could not cover.
+type RestoreResult struct {
+	Node     store.Snapshot
+	SafetyID *string
+	Warning  string
+}
+
 // Restore returns a workset to a snapshot. It takes a safety snapshot first,
 // then writes a new node whose parent is the restored one. Nothing is
 // deleted: history is append-only.
-func (s *Service) Restore(ctx context.Context, id string) (store.Snapshot, error) {
+func (s *Service) Restore(ctx context.Context, id string) (RestoreResult, error) {
 	target, err := s.snapshotOr404(ctx, id)
 	if err != nil {
-		return store.Snapshot{}, err
+		return RestoreResult{}, err
 	}
 	w, err := s.store.WorksetByID(ctx, target.WorksetID)
 	if err != nil {
-		return store.Snapshot{}, err
+		return RestoreResult{}, err
 	}
 
 	m := s.lock(w.ID)
 	m.Lock()
 	defer m.Unlock()
 
-	// The safety snapshot is the undo for the undo. An agent that rolls back
-	// to the wrong node can still reach the state it left.
-	//
-	// It must not block the restore. The state that most needs a rollback is
-	// the state that cannot be snapshotted: an agent that deleted a declared
-	// path leaves nothing to capture.
-	if _, err := s.snapshotLocked(ctx, w, "before restore of "+target.ID, true, nil); err != nil {
-		s.log.Warn("safety snapshot failed; restoring anyway",
-			"workset", w.Name, "target", target.ID, "error", err)
-	}
+	result := s.safetySnapshot(ctx, w, target.ID)
+
 	if err := s.engine.Restore(ctx, target.FSHandle); err != nil {
-		return store.Snapshot{}, asAPIError(err)
+		return RestoreResult{}, asAPIError(err)
 	}
 	sn, err := s.snapshotLocked(ctx, w, "restore of "+target.ID, true, &target.ID)
-	return sn, asAPIError(err)
+	if err != nil {
+		return RestoreResult{}, asAPIError(err)
+	}
+	result.Node = sn
+	return result, nil
+}
+
+// safetySnapshot is the undo for the undo: an agent that rolls back to the
+// wrong node can still reach the state it left.
+//
+// It never blocks the restore, because the state that most needs a rollback
+// is often the state that cannot be snapshotted. It covers every path it
+// can: one deleted path in a workset of 5 must not discard the other 4. The
+// result says what it missed, so the caller is not left to read a log.
+func (s *Service) safetySnapshot(ctx context.Context, w store.Workset, targetID string) RestoreResult {
+	root := s.cfg.SnapshotRoot()
+	usable := make([]string, 0, len(w.Paths))
+	var skipped []string
+	for _, p := range w.Paths {
+		if err := engine.CheckSource(root, p); err != nil {
+			skipped = append(skipped, p)
+			continue
+		}
+		usable = append(usable, p)
+	}
+
+	if len(usable) == 0 {
+		warning := fmt.Sprintf("no safety snapshot: none of the %d workset paths can be read", len(w.Paths))
+		s.log.Warn("safety snapshot skipped", "workset", w.Name, "target", targetID, "paths", len(w.Paths))
+		return RestoreResult{Warning: warning}
+	}
+
+	label := "before restore of " + targetID
+	if len(skipped) > 0 {
+		label = fmt.Sprintf("%s (partial: %d of %d paths)", label, len(usable), len(w.Paths))
+	}
+	sn, err := s.snapshotPathsLocked(ctx, w, usable, label, true, nil)
+	if err != nil {
+		s.log.Warn("safety snapshot failed; restoring anyway",
+			"workset", w.Name, "target", targetID, "error", err)
+		return RestoreResult{Warning: "no safety snapshot: " + err.Error()}
+	}
+	if len(skipped) > 0 {
+		s.log.Warn("safety snapshot is partial", "workset", w.Name, "skipped", skipped)
+		return RestoreResult{
+			SafetyID: &sn.ID,
+			Warning: fmt.Sprintf("the safety snapshot covers %d of %d paths; it does not hold %s",
+				len(usable), len(w.Paths), strings.Join(skipped, ", ")),
+		}
+	}
+	return RestoreResult{SafetyID: &sn.ID}
 }
 
 // Prune removes a snapshot and its handle. It refuses a node with children
@@ -324,7 +381,8 @@ func (s *Service) Prune(ctx context.Context, id string, cascade bool) ([]store.S
 	for i := len(order) - 1; i >= 0; i-- {
 		sn := order[i]
 		if err := s.engine.Delete(ctx, sn.FSHandle); err != nil {
-			return removed, fmt.Errorf("delete handle %s: %w", sn.FSHandle, err)
+			return removed, fmt.Errorf("delete handle %s: %w; %d snapshot(s) removed before it: %s",
+				sn.FSHandle, err, len(removed), strings.Join(idsOf(removed), " "))
 		}
 		if _, err := s.store.DeleteSnapshot(ctx, sn.ID, false); err != nil {
 			return removed, err
@@ -336,6 +394,16 @@ func (s *Service) Prune(ctx context.Context, id string, cascade bool) ([]store.S
 
 // asAPIError turns an engine complaint about the working set into a 400. The
 // caller declared those paths, so the caller is the one who can fix them.
+// idsOf names the nodes a partial prune already removed, so the caller can
+// tell what is gone.
+func idsOf(list []store.Snapshot) []string {
+	out := make([]string, len(list))
+	for i, sn := range list {
+		out[i] = sn.ID
+	}
+	return out
+}
+
 func asAPIError(err error) error {
 	if errors.Is(err, engine.ErrBadSource) {
 		return badRequest(err.Error())

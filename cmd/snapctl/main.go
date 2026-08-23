@@ -267,11 +267,21 @@ func (c *client) restore(out io.Writer, args []string, raw bool) error {
 	if raw {
 		return print(out, body)
 	}
-	var got node
+	var got struct {
+		node
+		SafetySnapshot *string `json:"safety_snapshot"`
+		SafetyWarning  string  `json:"safety_warning"`
+	}
 	if err := json.Unmarshal(body, &got); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "restored %s; new node %s\n", args[0], got.ID)
+	if got.SafetySnapshot != nil {
+		fmt.Fprintf(out, "the state before this restore is snapshot %s\n", *got.SafetySnapshot)
+	}
+	if got.SafetyWarning != "" {
+		fmt.Fprintln(out, "warning: "+got.SafetyWarning)
+	}
 	fmt.Fprintln(out, "processes and sockets do not roll back; restart the process tree")
 	return nil
 }

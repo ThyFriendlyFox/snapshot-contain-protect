@@ -438,3 +438,122 @@ func TestWorksetMayNameAPathThatDoesNotExistYet(t *testing.T) {
 	writeFile(t, filepath.Join(later, "a.txt"), "a")
 	f.post("/snapshot", snapshotRequest{Workset: "later"}, http.StatusCreated, nil)
 }
+
+func TestSafetySnapshotCoversThePathsItStillCan(t *testing.T) {
+	f := newFixture(t)
+	second := filepath.Join(filepath.Dir(f.work), "work2")
+	writeFile(t, filepath.Join(second, "theirs.txt"), "v1")
+	f.post("/worksets", worksetRequest{Name: "pair", Paths: []string{f.work, second}}, http.StatusCreated, nil)
+
+	var first snapshotResponse
+	f.post("/snapshot", snapshotRequest{Workset: "pair", Label: "v1"}, http.StatusCreated, &first)
+
+	// New work lands in one path; the other path disappears.
+	replace(t, filepath.Join(second, "theirs.txt"), "v2-work-worth-keeping")
+	if err := os.RemoveAll(f.work); err != nil {
+		t.Fatal(err)
+	}
+
+	var got restoreResponse
+	f.post("/restore", restoreRequest{ID: first.ID, Confirm: true}, http.StatusCreated, &got)
+
+	// The restore must not discard the work in the path it could still read.
+	if got.SafetySnapshot == nil {
+		t.Fatal("no safety snapshot was taken, so the v2 work is gone")
+	}
+	if got.SafetyWarning == "" {
+		t.Error("a partial safety snapshot did not say what it missed")
+	}
+
+	// Restoring the safety snapshot brings the v2 work back.
+	f.post("/restore", restoreRequest{ID: *got.SafetySnapshot, Confirm: true}, http.StatusCreated, nil)
+	if body := readFile(t, filepath.Join(second, "theirs.txt")); body != "v2-work-worth-keeping" {
+		t.Fatalf("theirs.txt = %q, want the v2 work back", body)
+	}
+}
+
+func TestRestoreReportsWhenNoSafetySnapshotWasPossible(t *testing.T) {
+	f := newFixture(t)
+	first := f.snapshot("first", false)
+	if err := os.RemoveAll(f.work); err != nil {
+		t.Fatal(err)
+	}
+
+	var got restoreResponse
+	f.post("/restore", restoreRequest{ID: first.ID, Confirm: true}, http.StatusCreated, &got)
+	if got.SafetySnapshot != nil {
+		t.Fatal("a safety snapshot of a deleted working set was reported")
+	}
+	if got.SafetyWarning == "" {
+		t.Fatal("the caller was not told that no safety snapshot exists")
+	}
+}
+
+func TestRestoreDoesNotOverwriteAPathThatBecameASymlink(t *testing.T) {
+	f := newFixture(t)
+	first := f.snapshot("first", false)
+
+	elsewhere := filepath.Join(filepath.Dir(f.work), "elsewhere")
+	writeFile(t, filepath.Join(elsewhere, "theirs.txt"), "theirs")
+	if err := os.RemoveAll(f.work); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, f.work); err != nil {
+		t.Fatal(err)
+	}
+
+	f.post("/restore", restoreRequest{ID: first.ID, Confirm: true}, http.StatusBadRequest, nil)
+	if body := readFile(t, filepath.Join(elsewhere, "theirs.txt")); body != "theirs" {
+		t.Fatalf("the link target was overwritten: %q", body)
+	}
+}
+
+func TestRetentionKeepsWorkingAfterOneStuckHandle(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	f.setKeep(1)
+
+	stuck := f.snapshot("auto", true)
+	sn, err := f.svc.store.SnapshotByID(ctx, stuck.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.svc.engine = stubbornEngine{Engine: f.svc.engine, handle: sn.FSHandle}
+
+	// 4 more snapshots. Retention must free each new one it can, instead of
+	// stopping for good at the handle it cannot.
+	for i := 0; i < 4; i++ {
+		f.snapshot("auto", true)
+	}
+
+	var list []store.Snapshot
+	f.get("/snapshots?workset=proj-a", http.StatusOK, &list)
+	if len(list) != 2 {
+		t.Fatalf("graph size = %d, want 2: the stuck snapshot plus the kept one", len(list))
+	}
+	if list[0].ID != stuck.ID {
+		t.Fatalf("the surviving old node is %s, want the stuck one %s", list[0].ID, stuck.ID)
+	}
+}
+
+// stubbornEngine refuses to delete one handle and allows the rest.
+type stubbornEngine struct {
+	engine.Engine
+	handle string
+}
+
+func (e stubbornEngine) Delete(ctx context.Context, handle string) error {
+	if handle == e.handle {
+		return errors.New("subvolume is busy")
+	}
+	return e.Engine.Delete(ctx, handle)
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}

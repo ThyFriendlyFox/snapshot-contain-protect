@@ -4,12 +4,31 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
 	"time"
 )
+
+// tempDir is t.TempDir plus a cleanup that makes every directory writable
+// again. A test that stores a read-only directory would otherwise defeat Go's
+// own cleanup when the suite runs as a normal user.
+func tempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	// Registered after TempDir's own cleanup, so it runs before it.
+	t.Cleanup(func() {
+		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+			if err == nil && d.IsDir() {
+				_ = os.Chmod(p, 0o700)
+			}
+			return nil
+		})
+	})
+	return dir
+}
 
 func writeFile(t *testing.T, path, body string) {
 	t.Helper()
@@ -395,7 +414,7 @@ func TestCopyRestoreReturnsExactModes(t *testing.T) {
 
 func TestCopyHandlesAReadOnlyDirectory(t *testing.T) {
 	ctx := context.Background()
-	base := t.TempDir()
+	base := tempDir(t)
 	work := filepath.Join(base, "work")
 	locked := filepath.Join(work, "locked")
 	writeFile(t, filepath.Join(locked, "a.txt"), "a")
@@ -427,4 +446,127 @@ func modeOf(t *testing.T, path string) os.FileMode {
 		t.Fatal(err)
 	}
 	return fi.Mode().Perm()
+}
+
+func TestDeleteRemovesAHandleHoldingAReadOnlyDirectory(t *testing.T) {
+	ctx := context.Background()
+	base := tempDir(t)
+	work := filepath.Join(base, "work")
+	locked := filepath.Join(work, "locked")
+	writeFile(t, filepath.Join(locked, "a.txt"), "a")
+	if err := os.Chmod(locked, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+
+	e := NewCopy(filepath.Join(base, "snapshots"))
+	handle, err := e.Create(ctx, "01AAA", []string{work})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The stored copy keeps mode 0555, and unlinking its children needs write
+	// permission on it. A handle that cannot be deleted can never be pruned.
+	if err := e.Delete(ctx, handle); err != nil {
+		t.Fatalf("delete of a handle with a read-only directory failed: %v", err)
+	}
+	if _, err := os.Stat(handle); !os.IsNotExist(err) {
+		t.Fatal("the handle survived delete")
+	}
+}
+
+func TestRestoreOverAReadOnlyDirectoryLeavesNoStaleTree(t *testing.T) {
+	ctx := context.Background()
+	base := tempDir(t)
+	work := filepath.Join(base, "work")
+	locked := filepath.Join(work, "locked")
+	writeFile(t, filepath.Join(locked, "a.txt"), "a")
+	writeFile(t, filepath.Join(work, "config.json"), "{}")
+	if err := os.Chmod(locked, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+
+	e := NewCopy(filepath.Join(base, "snapshots"))
+	handle, err := e.Create(ctx, "01AAA", []string{work})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replace(t, filepath.Join(work, "config.json"), "wrecked")
+
+	// The first restore must not leave <path>.snapshot-previous behind: a
+	// stale one makes every later restore fail with "file exists".
+	for i := 0; i < 2; i++ {
+		if err := e.Restore(ctx, handle); err != nil {
+			t.Fatalf("restore %d failed: %v", i+1, err)
+		}
+		if _, err := os.Lstat(work + ".snapshot-previous"); !os.IsNotExist(err) {
+			t.Fatalf("restore %d left a stale previous tree", i+1)
+		}
+		if got := read(t, filepath.Join(work, "config.json")); got != "{}" {
+			t.Fatalf("restore %d: config.json = %q, want %q", i+1, got, "{}")
+		}
+	}
+}
+
+func TestRestoreRefusesADestinationThatBecameASymlink(t *testing.T) {
+	ctx := context.Background()
+	base := t.TempDir()
+	work := filepath.Join(base, "work")
+	writeFile(t, filepath.Join(work, "a.txt"), "a")
+
+	e := NewCopy(filepath.Join(base, "snapshots"))
+	handle, err := e.Create(ctx, "01AAA", []string{work})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The declared path is now a link to somebody else's work.
+	elsewhere := filepath.Join(base, "elsewhere")
+	writeFile(t, filepath.Join(elsewhere, "theirs.txt"), "theirs")
+	if err := os.RemoveAll(work); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, work); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := e.Restore(ctx, handle); !errors.Is(err, ErrBadSource) {
+		t.Fatalf("error = %v, want ErrBadSource", err)
+	}
+	if got := read(t, filepath.Join(elsewhere, "theirs.txt")); got != "theirs" {
+		t.Fatalf("the link target was disturbed: %q", got)
+	}
+	if _, err := os.Readlink(work); err != nil {
+		t.Fatalf("the symlink did not survive: %v", err)
+	}
+}
+
+func TestNestingGuardSeesThroughASymlinkedDataDirectory(t *testing.T) {
+	base := t.TempDir()
+	realHome := filepath.Join(base, "realhome")
+	if err := os.MkdirAll(filepath.Join(realHome, "data", "snapshots"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(base, "home")
+	if err := os.Symlink(realHome, home); err != nil {
+		t.Fatal(err)
+	}
+
+	// The data directory is reached through a symlink, so its spelling and the
+	// resolved workset path differ. The guard must still see the nesting.
+	e := NewCopy(filepath.Join(home, "data", "snapshots"))
+	if _, err := e.Create(context.Background(), "01AAA", []string{realHome}); !errors.Is(err, ErrBadSource) {
+		t.Fatalf("error = %v, want ErrBadSource", err)
+	}
+}
+
+func TestNestingGuardIsNotFooledByADotDotName(t *testing.T) {
+	// filepath.Rel returns "..foo/snapshots" here. A plain "..' prefix test
+	// reads that as an escape and lets the nesting through.
+	if err := checkNesting("/x/..foo/snapshots", "/x"); !errors.Is(err, ErrBadSource) {
+		t.Fatalf("error = %v, want ErrBadSource", err)
+	}
+	if err := checkNesting("/x/snapshots", "/y"); err != nil {
+		t.Fatalf("unrelated paths reported as nested: %v", err)
+	}
 }

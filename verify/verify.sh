@@ -21,11 +21,37 @@ go build ./...
 echo "== 4/5 test =="
 go test ./...
 
-echo "== 5/5 btrfs gate =="
+echo "== 5/6 btrfs gate =="
 if command -v btrfs >/dev/null 2>&1; then
   go test -tags btrfs_live ./internal/engine/ -run TestBtrfsLive -v
 else
   echo "SKIPPED LOUDLY: btrfs tooling absent on this host; the btrfs backend is unproven here."
+fi
+
+echo "== 6/6 unprivileged gate =="
+# The daemon's documented deployment is a normal user. As root every
+# permission check passes, so the read-only-directory cases prove nothing.
+if [ "$(id -u)" = "0" ] && command -v setpriv >/dev/null 2>&1; then
+  unpriv=$(mktemp -d)
+  chmod 777 "$unpriv"
+  go test -c -o "$unpriv/engine.test" ./internal/engine
+  go test -c -o "$unpriv/api.test" ./internal/api
+  chmod 755 "$unpriv/engine.test" "$unpriv/api.test"
+  for suite in engine api; do
+    setpriv --reuid=65534 --regid=65534 --clear-groups \
+      env TMPDIR="$unpriv" HOME="$unpriv" "$unpriv/$suite.test" -test.count=1 >"$unpriv/$suite.log" 2>&1 || {
+        echo "unprivileged $suite suite failed:"
+        tail -30 "$unpriv/$suite.log"
+        rm -rf "$unpriv"
+        exit 1
+      }
+    echo "ok  unprivileged $suite suite"
+  done
+  rm -rf "$unpriv"
+elif [ "$(id -u)" != "0" ]; then
+  echo "already running as a normal user; steps 1 to 4 covered this."
+else
+  echo "SKIPPED LOUDLY: running as root with no setpriv; permission cases are unproven here."
 fi
 
 echo "verify: green"

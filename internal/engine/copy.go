@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -48,20 +49,43 @@ func (c *Copy) Create(ctx context.Context, id string, sources []string) (string,
 	for i, src := range sources {
 		dir := subtreeName(i, src)
 		if err := cloneTree(ctx, src, filepath.Join(handle, dir), link); err != nil {
-			_ = os.RemoveAll(handle)
+			_ = removeTree(handle)
 			return "", fmt.Errorf("snapshot %s: %w", src, err)
 		}
 		m.Sources = append(m.Sources, source{Path: src, Dir: dir})
 	}
 	if err := writeManifest(handle, m); err != nil {
-		_ = os.RemoveAll(handle)
+		_ = removeTree(handle)
 		return "", err
 	}
 	return handle, nil
 }
 
 func (c *Copy) Delete(_ context.Context, handle string) error {
-	return os.RemoveAll(handle)
+	return removeTree(handle)
+}
+
+// removeTree deletes a tree that may hold a read-only directory. A working
+// set can contain one — a vendored dependency tree, an unpacked archive —
+// and the snapshot reproduces its mode. Unlinking a child needs write
+// permission on its directory, so make every directory writable first.
+func removeTree(path string) error {
+	if _, err := os.Lstat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	_ = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // Walk as far as possible; RemoveAll reports the rest.
+		}
+		if d.IsDir() {
+			_ = os.Chmod(p, 0o700)
+		}
+		return nil
+	})
+	return os.RemoveAll(path)
 }
 
 func (c *Copy) Diff(ctx context.Context, from, to string) (Change, error) {
@@ -72,6 +96,14 @@ func (c *Copy) Restore(ctx context.Context, handle string) error {
 	m, err := readManifest(handle)
 	if err != nil {
 		return err
+	}
+	for _, s := range m.Sources {
+		// A declared path that has become a symlink since the snapshot must
+		// not be overwritten: the restore would delete the link and orphan
+		// whatever it points at.
+		if err := checkDestination(s.Path); err != nil {
+			return err
+		}
 	}
 	for _, s := range m.Sources {
 		// Restore copies bytes instead of hardlinking. The restored tree must
@@ -221,22 +253,29 @@ func writeCopy(src, dst string, fi fs.FileInfo) error {
 func swapIn(ctx context.Context, from, dst string, mode cloneMode) error {
 	staged := dst + ".snapshot-restore"
 	previous := dst + ".snapshot-previous"
-	_ = os.RemoveAll(staged)
-	_ = os.RemoveAll(previous)
+	// Force-clear both. A tree left by an earlier interrupted restore can hold
+	// a read-only directory, and a stale one makes the rename below fail with
+	// "file exists" for good.
+	if err := removeTree(staged); err != nil {
+		return err
+	}
+	if err := removeTree(previous); err != nil {
+		return err
+	}
 
 	if err := cloneTree(ctx, from, staged, mode); err != nil {
-		_ = os.RemoveAll(staged)
+		_ = removeTree(staged)
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		_ = os.RemoveAll(staged)
+		_ = removeTree(staged)
 		return err
 	}
 
 	existed := true
 	if err := os.Rename(dst, previous); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			_ = os.RemoveAll(staged)
+			_ = removeTree(staged)
 			return err
 		}
 		existed = false
@@ -245,8 +284,13 @@ func swapIn(ctx context.Context, from, dst string, mode cloneMode) error {
 		if existed {
 			_ = os.Rename(previous, dst)
 		}
-		_ = os.RemoveAll(staged)
+		_ = removeTree(staged)
 		return err
 	}
-	return os.RemoveAll(previous)
+	// The restore has landed. Clearing the old tree is housekeeping: a failure
+	// here must not report a restore that succeeded as a failure.
+	if err := removeTree(previous); err != nil {
+		slog.Warn("restore left the previous tree in place", "path", previous, "error", err)
+	}
+	return nil
 }

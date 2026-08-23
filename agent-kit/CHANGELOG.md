@@ -50,3 +50,16 @@ human is ready for the release workflow to publish binaries.
 - On Btrfs, a staged subvolume left by an interrupted restore was cleaned up
   with `rmdir`, which cannot remove a subvolume, and every later restore of
   that path failed.
+- A read-only directory in the working set made its snapshot impossible to
+  delete, which stopped retention for that workset and every workset after
+  it. Anything that discards a tree now makes its directories writable first.
+- A restore over a working set holding a read-only directory landed on disk
+  and then reported 500, and left a tree that made every later restore of
+  that path fail.
+- The safety snapshot was all or nothing: one unreadable path discarded the
+  state of every other path in the workset. It now covers what it can, and
+  `POST /restore` returns `safety_snapshot` and `safety_warning`.
+- A restore overwrote a declared path that had become a symlink, deleting the
+  link and orphaning the work at its target. It refuses with 400.
+- The nesting guard missed a data directory reached through a symlink, and
+  read a directory named `..foo` as an escape.

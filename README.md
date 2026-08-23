@@ -51,17 +51,27 @@ declaration they act on.
 | `POST /snapshot` | `{"workset":"proj-a","label":"before file cleanup","auto":false}` | `{"id","created_at","duration_ms"}` |
 | `GET /snapshots` | `?workset=proj-a` | The graph as a flat list. Each item carries `id`, `parent_id`, `label`, `created_at`, `auto`. |
 | `GET /diff` | `?from=<id>&to=<id>` | `{"added":[],"modified":[],"deleted":[],"truncated":false}`, capped at 500 paths per category |
-| `POST /restore` | `{"id":"01J...","confirm":true}` | The new snapshot node the restore appended |
+| `POST /restore` | `{"id":"01J...","confirm":true}` | The new snapshot node the restore appended, plus `safety_snapshot` and, when something was missed, `safety_warning` |
 | `DELETE /snapshots/<id>` | `?cascade=true` | `{"removed":["01J..."]}`. It refuses a node with children unless `cascade=true`. |
 | `POST /worksets` | `{"name":"proj-a","paths":["/home/u/proj"]}` | The workset |
 | `GET /worksets` | | Every workset |
 | `GET /healthz` | | `{"status":"ok","backend":"btrfs"}` |
 
 A restore needs `confirm: true`, so an agent cannot roll back by accident.
-Before it restores, the service takes a safety snapshot of the current state.
-A restore of a workset with several paths restores them one at a time. If one
-path fails, the paths before it are already back; the safety snapshot is the
-way out.
+Before it restores, the service takes a safety snapshot of the current state
+and returns its identifier as `safety_snapshot`.
+
+The safety snapshot never blocks the restore: the state that most needs a
+rollback is often the state that cannot be read. It covers every path it can,
+so one deleted path in a workset of 5 does not discard the other 4. When it
+missed something, or could take nothing at all, `safety_warning` says so and
+`safety_snapshot` is `null`. Read that field before you rely on being able to
+undo the undo.
+
+A restore refuses a declared path that has become a symlink since the
+snapshot, rather than deleting the link. A restore of a workset with several
+paths restores them one at a time. If one path fails, the paths before it are
+already back.
 
 ## The graph
 

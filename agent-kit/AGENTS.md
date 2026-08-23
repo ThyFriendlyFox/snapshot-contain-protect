@@ -44,7 +44,17 @@ Requires Go 1.25.
     setuid, setgid and sticky, survive. `open(2)` and `mkdir(2)` apply the
     umask, so the mode is set after the write, never by the create call.
 11. **A workset never contains the snapshot root.** Otherwise a snapshot
-    walks into the handle it is writing.
+    walks into the handle it is writing. Compare resolved paths: a data
+    directory reached through a symlink is spelled differently.
+12. **Anything that discards a tree uses `removeTree`.** A snapshot
+    reproduces a read-only directory, and `os.RemoveAll` cannot unlink its
+    children as a normal user. A handle that cannot be deleted can never be
+    pruned.
+13. **Retention survives one stuck snapshot.** A handle that will not go
+    keeps its row, logs, and does not stop the pass or the worksets after
+    it.
+14. **A restore that landed on disk reports success.** Housekeeping after
+    the rename never turns a successful restore into an error.
 
 ## Landmine map
 
@@ -58,7 +68,9 @@ Requires Go 1.25.
 | `internal/api/service.go` | Every write path takes the per-workset lock. A restore and a snapshot on the same paths at once tangles the graph. |
 | Workset paths | A symlinked directory passes `os.Stat` but a tree walk does not descend through it. Validate with `os.Lstat`, and resolve the link when the workset is declared. |
 | Prune and retention | Free the handle before the row. A row without a handle breaks every later diff and restore of that node. |
-| The safety snapshot | It must never block a restore. The state that most needs a rollback is often the state that cannot be snapshotted. |
+| The safety snapshot | It must never block a restore. The state that most needs a rollback is often the state that cannot be snapshotted. It is also never all-or-nothing: it covers the paths it can and reports what it missed in `safety_warning`. |
+| `internal/engine/copy.go` `swapIn` | The final cleanup runs after both renames. A failure there is housekeeping, not a failed restore. A stale `.snapshot-previous` wedges every later restore of that path. |
+| Read-only directories | They appear in real working sets, and as root every permission check passes. Gate step 6 runs the suites as a normal user; do not let it rot. |
 
 ## House style
 

@@ -37,6 +37,14 @@ type pruneResponse struct {
 	Removed []string `json:"removed"`
 }
 
+// restoreResponse is the new snapshot node, plus what the safety snapshot
+// before it managed to cover. The node's own fields stay at the top level.
+type restoreResponse struct {
+	store.Snapshot
+	SafetySnapshot *string `json:"safety_snapshot"`
+	SafetyWarning  string  `json:"safety_warning,omitempty"`
+}
+
 // Handler returns the router. Every route is one of the five verbs, or the
 // workset declaration the verbs need.
 func (s *Service) Handler(log *slog.Logger) http.Handler {
@@ -115,12 +123,16 @@ func (s *Service) handleRestore(w http.ResponseWriter, r *http.Request) {
 		fail(w, badRequest("restore needs confirm=true"))
 		return
 	}
-	sn, err := s.Restore(r.Context(), req.ID)
+	result, err := s.Restore(r.Context(), req.ID)
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	write(w, http.StatusCreated, sn)
+	write(w, http.StatusCreated, restoreResponse{
+		Snapshot:       result.Node,
+		SafetySnapshot: result.SafetyID,
+		SafetyWarning:  result.Warning,
+	})
 }
 
 func (s *Service) handlePrune(w http.ResponseWriter, r *http.Request) {

@@ -88,25 +88,58 @@ func checkSources(root string, sources []string) error {
 		return fmt.Errorf("%w: workset has no paths", ErrBadSource)
 	}
 	for _, p := range sources {
-		if !filepath.IsAbs(p) {
-			return fmt.Errorf("%w: path %q is not absolute", ErrBadSource, p)
-		}
-		// Lstat, not Stat. A symlink to a directory passes Stat, but a tree
-		// walk does not descend through it: the snapshot would be empty and
-		// the restore would replace the link with an empty directory.
-		fi, err := os.Lstat(p)
-		if err != nil {
-			return fmt.Errorf("%w: stat %q: %v", ErrBadSource, p, err)
-		}
-		if fi.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%w: path %q is a symlink; declare the directory it points at", ErrBadSource, p)
-		}
-		if !fi.IsDir() {
-			return fmt.Errorf("%w: path %q is not a directory", ErrBadSource, p)
-		}
-		if err := checkNesting(root, p); err != nil {
+		if err := CheckSource(root, p); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// CheckSource reports whether one path can be snapshotted into root. The API
+// uses it to find the paths a partial safety snapshot can still cover.
+func CheckSource(root, p string) error {
+	if !filepath.IsAbs(p) {
+		return fmt.Errorf("%w: path %q is not absolute", ErrBadSource, p)
+	}
+	if err := checkSourcePath(p); err != nil {
+		return err
+	}
+	return checkNesting(root, p)
+}
+
+// checkSourcePath rejects a path a snapshot cannot read. It must be there.
+func checkSourcePath(p string) error {
+	fi, err := os.Lstat(p)
+	if err != nil {
+		return fmt.Errorf("%w: stat %q: %v", ErrBadSource, p, err)
+	}
+	return checkKind(fi, p)
+}
+
+// checkDestination rejects a path a restore must not write over. A path that
+// is not there is the normal case: an agent deleted the working set, and the
+// restore puts it back.
+func checkDestination(p string) error {
+	fi, err := os.Lstat(p)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("%w: stat %q: %v", ErrBadSource, p, err)
+	}
+	return checkKind(fi, p)
+}
+
+// checkKind holds the one rule both directions share. Lstat, not Stat: a
+// symlink to a directory passes Stat, but a tree walk does not descend
+// through it, so a snapshot of it would be empty and a restore over it would
+// delete the link.
+func checkKind(fi os.FileInfo, p string) error {
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: path %q is a symlink; declare the directory it points at", ErrBadSource, p)
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("%w: path %q is not a directory", ErrBadSource, p)
 	}
 	return nil
 }
@@ -119,6 +152,11 @@ func checkNesting(root, source string) error {
 	if err != nil {
 		return err
 	}
+	// Compare the paths the filesystem uses. The workset path is already
+	// resolved, so a data directory reached through a symlink would otherwise
+	// be spelled differently and slip past the check.
+	absRoot = resolve(absRoot)
+	source = resolve(source)
 	if within(absRoot, source) {
 		return fmt.Errorf("%w: path %q contains the snapshot root %s; a snapshot of it would contain itself",
 			ErrBadSource, source, absRoot)
@@ -135,7 +173,25 @@ func within(dir, child string) bool {
 	if err != nil {
 		return false
 	}
-	return rel == "." || !strings.HasPrefix(rel, "..")
+	if rel == "." {
+		return true
+	}
+	// A plain prefix test would read a directory named "..foo" as an escape.
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+}
+
+// resolve follows symlinks as far as the path exists. A path that is not
+// there yet resolves through its nearest existing parent, so the comparison
+// still uses real directory names.
+func resolve(path string) string {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		return real
+	}
+	parent := filepath.Dir(path)
+	if parent == path {
+		return path
+	}
+	return filepath.Join(resolve(parent), filepath.Base(path))
 }
 
 // subtreeName keeps handles readable while staying collision-free.

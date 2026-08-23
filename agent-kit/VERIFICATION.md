@@ -7,6 +7,7 @@
 3. Build — `go build ./...`
 4. Tests — `go test ./...`
 5. The live Btrfs gate — `go test -tags btrfs_live ./internal/engine/ -run TestBtrfsLive -v`
+6. The unprivileged gate — the engine and API suites, run again as user 65534
 
 ## The Btrfs gate
 
@@ -23,6 +24,17 @@ export SNAPSHOT_BTRFS_TEST_ROOT=/mnt/btrfs/snapshot-test
 
 The gate creates a subvolume, snapshots it, changes a file, restores it, and
 checks that the file came back. It removes what it made.
+
+## The unprivileged gate
+
+Step 6 exists because the daemon runs as a normal user and a working set can
+hold a read-only directory. As root every permission check passes, so a whole
+class of defect hides. The step compiles the engine and API suites, then runs
+them with `setpriv --reuid=65534`.
+
+It runs only when the suite runs as root and `setpriv` is present. As a normal
+user it states that steps 1 to 4 already covered the case. As root with no
+`setpriv` it skips loudly.
 
 ## Rules
 

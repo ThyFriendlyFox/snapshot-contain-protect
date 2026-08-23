@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/ThyFriendlyFox/snapshot-contain-protect/internal/store"
@@ -42,6 +44,7 @@ func (s *Service) pruneAutoLocked(ctx context.Context, worksetID string) error {
 	if excess <= 0 {
 		return nil
 	}
+	var stuck int
 	for _, sn := range candidates[:excess] {
 		// Re-read the node. An earlier pass of this loop may have moved its
 		// parent, and reparenting onto a deleted row breaks the foreign key.
@@ -52,18 +55,27 @@ func (s *Service) pruneAutoLocked(ctx context.Context, worksetID string) error {
 		if err != nil {
 			return err
 		}
-		if err := s.store.Reparent(ctx, current.ID, current.ParentID); err != nil {
-			return err
-		}
 		// Free the handle first. A row that outlives its handle breaks every
 		// later diff and restore of that node; a handle that outlives its row
 		// is disk this pass can never find again.
+		//
+		// A handle that will not go keeps its row and does not stop the pass.
+		// One stuck snapshot must not freeze retention for the whole workset.
 		if err := s.engine.Delete(ctx, current.FSHandle); err != nil {
+			s.log.Warn("retention could not free a snapshot; keeping its row",
+				"snapshot", current.ID, "handle", current.FSHandle, "error", err)
+			stuck++
+			continue
+		}
+		if err := s.store.Reparent(ctx, current.ID, current.ParentID); err != nil {
 			return err
 		}
 		if _, err := s.store.DeleteSnapshot(ctx, current.ID, false); err != nil {
 			return err
 		}
+	}
+	if stuck > 0 {
+		return fmt.Errorf("retention kept %d snapshot(s) whose handle could not be freed", stuck)
 	}
 	return nil
 }
@@ -75,14 +87,20 @@ func (s *Service) PruneAll(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// One workset that cannot be pruned must not stop the others.
+	var failed []string
 	for _, w := range worksets {
 		m := s.lock(w.ID)
 		m.Lock()
 		err := s.pruneAutoLocked(ctx, w.ID)
 		m.Unlock()
 		if err != nil {
-			return err
+			s.log.Warn("retention pass failed for a workset", "workset", w.Name, "error", err)
+			failed = append(failed, w.Name)
 		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("retention failed for %s", strings.Join(failed, ", "))
 	}
 	return nil
 }

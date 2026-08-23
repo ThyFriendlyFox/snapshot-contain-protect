@@ -41,6 +41,44 @@ Evidence: <commit / tag / gate run / screenshot>
 
 <!-- Entries below, newest first. -->
 
+## 2026-08-23 — The second review round: my fixes had introduced 3 defects
+
+I sent the 8 fixes back to the reviewer and asked 2 questions: is each
+finding closed, and did any fix break something new. 6 were closed. 1 was
+half closed. And 3 of my fixes had introduced new defects, 2 of them worse
+than the problem they replaced.
+
+The pattern is worth naming. My fix for the read-only directory made
+snapshots of such a directory work by reproducing its mode faithfully. That
+was right. But nothing made the copy writable again for deletion, and a
+normal user cannot unlink a child of a read-only directory. So the handle
+could never be deleted, the prune returned 500, retention stopped for that
+workset, and because one failure aborted the whole pass, it stopped for
+every workset after it too. Disk was never reclaimed again. The original
+defect at least failed loudly at snapshot time. Mine failed quietly, forever.
+
+The second: the restore's final cleanup hit the same read-only directory,
+but it runs after both renames. So the restore had already landed, and the
+service reported 500 anyway, wrote no node to the graph, and left a tree
+behind that made every later restore of that path fail on "file exists".
+
+The third was mine by choice, not by accident. I had made the safety
+snapshot warn instead of block. The reviewer pointed out that the check
+fails the whole workset for any 1 bad path, so a workset of 5 paths with 1
+deleted path skipped the safety snapshot for all 5 and silently discarded
+the work in the other 4. The caller got a 201 and a server log line it never
+sees. The safety snapshot now covers the paths it can, and the restore
+response carries `safety_snapshot` and `safety_warning`.
+
+I also learned why the first round of read-only tests passed: this container
+runs as root, and root ignores permission bits. The gate now has a sixth
+step that recompiles the engine and API suites and runs them as user 65534.
+I proved it works by reverting 1 fix and watching the unprivileged run fail
+while the root run stayed green.
+
+Evidence: `./verify/verify.sh` green, including the new step 6. 73 tests, 0
+failures, clean under `-race`.
+
 ## 2026-08-23 — A review found 8 defects in the MVP, 2 of them data loss
 
 I asked a second agent to attack the code I had just written. It found 8

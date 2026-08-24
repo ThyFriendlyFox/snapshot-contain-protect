@@ -40,3 +40,12 @@ what the snapshots on disk mean.
 
 A flag beats an environment variable. An environment variable beats the
 default.
+
+## Workset paths
+
+`POST /worksets` stores the resolved spelling of every path, not the spelling
+the caller sent. A symlink resolves to its target. On Windows an 8.3 short
+name such as `C:\Users\RUNNER~1\work` resolves to `C:\Users\runneradmin\work`.
+
+Every later answer uses the stored spelling. A caller that compares a diff
+path against the string it declared must resolve its own path first.

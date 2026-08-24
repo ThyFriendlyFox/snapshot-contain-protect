@@ -31,6 +31,11 @@ func newFixture(t *testing.T) *fixture {
 	work := filepath.Join(base, "work")
 	writeFile(t, filepath.Join(work, "config.json"), "{}")
 	writeFile(t, filepath.Join(work, "keep.txt"), "keep")
+	// The daemon stores the resolved path, so the test must expect it. On
+	// Windows a temp directory arrives as an 8.3 short name (RUNNER~1) and
+	// resolves to its long form; on unix a symlinked temp directory resolves
+	// the same way.
+	work = resolved(t, work)
 
 	cfg := DefaultConfig()
 	cfg.DataDir = filepath.Join(base, "data")
@@ -105,6 +110,16 @@ func mustSymlink(t *testing.T, target, link string) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("this host refuses symlink creation: %v", err)
 	}
+}
+
+// resolved returns the spelling of a path that the daemon will store.
+func resolved(t *testing.T, path string) string {
+	t.Helper()
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return real
 }
 
 func writeFile(t *testing.T, path, body string) {
@@ -450,6 +465,7 @@ func TestSafetySnapshotCoversThePathsItStillCan(t *testing.T) {
 	f := newFixture(t)
 	second := filepath.Join(filepath.Dir(f.work), "work2")
 	writeFile(t, filepath.Join(second, "theirs.txt"), "v1")
+	second = resolved(t, second)
 	f.post("/worksets", worksetRequest{Name: "pair", Paths: []string{f.work, second}}, http.StatusCreated, nil)
 
 	var first snapshotResponse

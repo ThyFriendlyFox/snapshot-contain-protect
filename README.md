@@ -111,9 +111,11 @@ These are real. They have no workaround at the filesystem layer.
    writer that creates a new file and renames it over the old one is safe,
    and that is what editors and most agents do. Use Btrfs for work that
    matters.
-6. **A workset path must be a real directory, not a symlink.** A tree walk
-   does not descend through a symlinked root. `snapctl workset` resolves the
-   link for you and stores the directory it points at.
+6. **A workset path is stored resolved, not as you typed it.** A tree walk
+   does not descend through a symlinked root, so `snapctl workset` resolves
+   the link and stores the directory it points at. On Windows an 8.3 short
+   name resolves to its long form. Diff and list answers use the stored
+   spelling.
 7. **A workset path must not contain the data directory.** A snapshot of it
    would contain itself. The daemon refuses the snapshot and says so.
 8. **The Btrfs backend is proven in CI, not on a desktop.** The

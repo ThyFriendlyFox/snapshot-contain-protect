@@ -26,6 +26,11 @@ func newDaemon(t *testing.T) (addr, work string) {
 	if err := os.WriteFile(filepath.Join(work, "a.txt"), []byte("first"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// The daemon stores the resolved path. A Windows temp directory arrives
+	// as an 8.3 short name and resolves to its long form.
+	if real, err := filepath.EvalSymlinks(work); err == nil {
+		work = real
+	}
 
 	cfg := api.DefaultConfig()
 	cfg.DataDir = filepath.Join(base, "data")

@@ -578,12 +578,29 @@ func TestNestingGuardSeesThroughASymlinkedDataDirectory(t *testing.T) {
 }
 
 func TestNestingGuardIsNotFooledByADotDotName(t *testing.T) {
-	// filepath.Rel returns "..foo/snapshots" here. A plain "..' prefix test
-	// reads that as an escape and lets the nesting through.
-	if err := checkNesting("/x/..foo/snapshots", "/x"); !errors.Is(err, ErrBadSource) {
+	// Real directories, because "/x" is not an absolute path on Windows and
+	// the guard compares resolved paths.
+	base := t.TempDir()
+	work := filepath.Join(base, "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// filepath.Rel returns "..foo/snapshots" for this pair. A plain ".."
+	// prefix test reads that as an escape and lets the nesting through.
+	inside := filepath.Join(work, "..foo", "snapshots")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkNesting(inside, work); !errors.Is(err, ErrBadSource) {
 		t.Fatalf("error = %v, want ErrBadSource", err)
 	}
-	if err := checkNesting("/x/snapshots", "/y"); err != nil {
+
+	elsewhere := filepath.Join(base, "elsewhere")
+	if err := os.MkdirAll(elsewhere, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkNesting(filepath.Join(elsewhere, "snapshots"), work); err != nil {
 		t.Fatalf("unrelated paths reported as nested: %v", err)
 	}
 }

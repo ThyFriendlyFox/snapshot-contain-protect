@@ -9,6 +9,10 @@
 5. The live Btrfs gate — `go test -tags btrfs_live ./internal/engine/ -run TestBtrfsLive -v`
 6. The unprivileged gate — the engine and API suites, run again as user 65534
 
+CI runs the same command on 3 hosts: `ubuntu-latest`, `windows-latest`, and
+an `ubuntu-latest` with a loopback btrfs filesystem. A test that cannot hold
+on a platform skips with the reason the host gave, never silently.
+
 ## The Btrfs gate
 
 Step 5 runs only when the host has the `btrfs` command. On any other host it

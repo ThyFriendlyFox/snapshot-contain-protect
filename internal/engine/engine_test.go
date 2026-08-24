@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -28,6 +29,26 @@ func tempDir(t *testing.T) string {
 		})
 	})
 	return dir
+}
+
+// mustSymlink creates a symlink, or skips the test with the reason the host
+// refused. Windows needs Developer Mode or elevation to make one, and a test
+// that cannot run must say so rather than fail or pass quietly.
+func mustSymlink(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("this host refuses symlink creation: %v", err)
+	}
+}
+
+// requirePOSIXModes skips a test that asserts permission bits. On Windows
+// os.Chmod only toggles the read-only attribute, so mode preservation is a
+// guarantee this project makes on Unix alone. docs/BACKENDS.md states it.
+func requirePOSIXModes(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("windows has no POSIX permission bits; mode preservation is a unix guarantee")
+	}
 }
 
 func writeFile(t *testing.T, path, body string) {
@@ -138,9 +159,7 @@ func TestCopyRestoreReturnsExactPriorState(t *testing.T) {
 	ctx := context.Background()
 	e, work := newCopyFixture(t)
 
-	if err := os.Symlink("keep.txt", filepath.Join(work, "link")); err != nil {
-		t.Fatal(err)
-	}
+	mustSymlink(t, "keep.txt", filepath.Join(work, "link"))
 	handle, err := e.Create(ctx, "01AAA", []string{work})
 	if err != nil {
 		t.Fatal(err)
@@ -337,9 +356,7 @@ func TestCopyRejectsASymlinkedWorksetPath(t *testing.T) {
 	real := filepath.Join(base, "real")
 	writeFile(t, filepath.Join(real, "important.txt"), "important")
 	link := filepath.Join(base, "link")
-	if err := os.Symlink(real, link); err != nil {
-		t.Fatal(err)
-	}
+	mustSymlink(t, real, link)
 
 	e := NewCopy(filepath.Join(base, "snapshots"))
 	// A tree walk does not descend through a symlinked root. Snapshotting it
@@ -373,6 +390,7 @@ func TestCopyRejectsAPathThatContainsTheSnapshotRoot(t *testing.T) {
 }
 
 func TestCopyRestoreReturnsExactModes(t *testing.T) {
+	requirePOSIXModes(t)
 	ctx := context.Background()
 	base := t.TempDir()
 	work := filepath.Join(base, "work")
@@ -413,6 +431,7 @@ func TestCopyRestoreReturnsExactModes(t *testing.T) {
 }
 
 func TestCopyHandlesAReadOnlyDirectory(t *testing.T) {
+	requirePOSIXModes(t)
 	ctx := context.Background()
 	base := tempDir(t)
 	work := filepath.Join(base, "work")
@@ -449,6 +468,7 @@ func modeOf(t *testing.T, path string) os.FileMode {
 }
 
 func TestDeleteRemovesAHandleHoldingAReadOnlyDirectory(t *testing.T) {
+	requirePOSIXModes(t)
 	ctx := context.Background()
 	base := tempDir(t)
 	work := filepath.Join(base, "work")
@@ -475,6 +495,7 @@ func TestDeleteRemovesAHandleHoldingAReadOnlyDirectory(t *testing.T) {
 }
 
 func TestRestoreOverAReadOnlyDirectoryLeavesNoStaleTree(t *testing.T) {
+	requirePOSIXModes(t)
 	ctx := context.Background()
 	base := tempDir(t)
 	work := filepath.Join(base, "work")
@@ -526,9 +547,7 @@ func TestRestoreRefusesADestinationThatBecameASymlink(t *testing.T) {
 	if err := os.RemoveAll(work); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(elsewhere, work); err != nil {
-		t.Fatal(err)
-	}
+	mustSymlink(t, elsewhere, work)
 
 	if err := e.Restore(ctx, handle); !errors.Is(err, ErrBadSource) {
 		t.Fatalf("error = %v, want ErrBadSource", err)
@@ -548,9 +567,7 @@ func TestNestingGuardSeesThroughASymlinkedDataDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	home := filepath.Join(base, "home")
-	if err := os.Symlink(realHome, home); err != nil {
-		t.Fatal(err)
-	}
+	mustSymlink(t, realHome, home)
 
 	// The data directory is reached through a symlink, so its spelling and the
 	// resolved workset path differ. The guard must still see the nesting.

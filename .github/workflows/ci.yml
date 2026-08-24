@@ -22,6 +22,21 @@ jobs:
       - name: Verify
         run: ./verify/verify.sh
 
+  # Windows is the v0.1.0 platform and no development host here runs it.
+  # This job is the only place Windows behaviour is real.
+  verify-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify
+        shell: bash
+        run: ./verify/verify.sh
+
   # The btrfs backend is the one the MVP targets, and no development host here
   # runs btrfs. A loopback image on the runner is where it gets proven.
   verify-btrfs:

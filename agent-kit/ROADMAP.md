@@ -116,7 +116,9 @@ carry work that is already written and only needs proving.
 - **Scope guard:** The existing backends only. No VSS yet. A PowerShell entry
   point may replace `verify.sh` on Windows, but it runs the same steps.
 - **Release:** v0.1.0
-- **Status:** ready
+- **Status:** in progress (week of 2026-08-24). The `verify-windows` job is
+  written and the suites now skip loudly where Windows cannot hold a Unix
+  guarantee: symlink creation, and permission bits. Waiting on the first run.
 - **Note:** Both binaries already cross-compile clean for `windows/amd64`,
   vet included. What is unknown is what fails at run time: `os.Symlink`
   needs Developer Mode or elevation, and `os.Chmod` on Windows only flips

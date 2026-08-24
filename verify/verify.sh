@@ -55,6 +55,8 @@ if [ "$(id -u)" = "0" ] && command -v setpriv >/dev/null 2>&1; then
     echo "ok  unprivileged $suite suite"
   done
   rm -rf "$unpriv"
+elif [ "$(uname -s)" != "Linux" ] && [ "$(uname -s)" != "Darwin" ]; then
+  echo "not a unix host; there are no permission bits to drop. Steps 1 to 4 covered what applies."
 elif [ "$(id -u)" != "0" ]; then
   echo "already running as a normal user; steps 1 to 4 covered this."
 else

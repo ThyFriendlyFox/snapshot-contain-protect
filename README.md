@@ -110,6 +110,11 @@ These are real. They have no workaround at the filesystem layer.
    gate on every pull request. No physical Btrfs machine has run it. On a
    host without Btrfs the gate skips loudly, never silently.
 
+9. **On Windows, modes do not survive a restore.** `chmod` there only toggles
+   the read-only attribute, and ACLs are not preserved at all. Contents and
+   layout come back; permissions do not. Creating a symlink also needs
+   Developer Mode or elevation.
+
 Limits 1 and 2 disappear inside a container with CRIU. Limit 3 never
 disappears. Limits 6 and 7 are enforced: the daemon refuses the workset
 rather than storing an empty snapshot.

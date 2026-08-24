@@ -98,6 +98,15 @@ func (f *fixture) snapshot(label string, auto bool) snapshotResponse {
 	return got
 }
 
+// mustSymlink creates a symlink, or skips with the reason the host refused.
+// Windows needs Developer Mode or elevation to make one.
+func mustSymlink(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("this host refuses symlink creation: %v", err)
+	}
+}
+
 func writeFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -335,9 +344,7 @@ func TestAMissingWorksetPathIs400NotAServerError(t *testing.T) {
 func TestWorksetResolvesASymlinkedPath(t *testing.T) {
 	f := newFixture(t)
 	link := filepath.Join(filepath.Dir(f.work), "link")
-	if err := os.Symlink(f.work, link); err != nil {
-		t.Fatal(err)
-	}
+	mustSymlink(t, f.work, link)
 	var ws store.Workset
 	f.post("/worksets", worksetRequest{Name: "linked", Paths: []string{link}}, http.StatusCreated, &ws)
 
@@ -498,9 +505,7 @@ func TestRestoreDoesNotOverwriteAPathThatBecameASymlink(t *testing.T) {
 	if err := os.RemoveAll(f.work); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(elsewhere, f.work); err != nil {
-		t.Fatal(err)
-	}
+	mustSymlink(t, elsewhere, f.work)
 
 	f.post("/restore", restoreRequest{ID: first.ID, Confirm: true}, http.StatusBadRequest, nil)
 	if body := readFile(t, filepath.Join(elsewhere, "theirs.txt")); body != "theirs" {

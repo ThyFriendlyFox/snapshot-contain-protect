@@ -35,6 +35,19 @@ from.
 snapshotd -backend copy
 ```
 
+### The copy backend on Windows
+
+NTFS supports hardlinks, so the backend runs there. 2 guarantees weaken, and
+neither has a workaround at this layer:
+
+- `os.Chmod` on Windows only toggles the read-only attribute. Permission bits
+  do not survive a restore, and ACLs are not preserved at all. Mode
+  preservation is a Unix guarantee.
+- Creating a symlink needs Developer Mode or elevation. A working set holding
+  one may fail to snapshot for an unelevated daemon.
+
+The Windows release targets VSS, not this backend. See `ROADMAP.md`.
+
 ## apfs
 
 The macOS backend. It is a stub. Every call returns "the apfs backend is not

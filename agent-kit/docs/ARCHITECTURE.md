@@ -41,6 +41,7 @@ rollback, once for the node the restore appends after it.
 | `handlers.go` | Routes, JSON shapes, status codes, request log |
 | `server.go` | Listener, loopback check, shutdown |
 | `retention.go` | The 50-snapshot budget and the timer that applies it |
+| `reconcile.go` | Makes the graph and the snapshot root agree at start |
 | `errors.go` | Status codes for caller-visible failures |
 
 ## Engine

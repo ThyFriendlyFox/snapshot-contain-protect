@@ -220,7 +220,10 @@ carry work that is already written and only needs proving.
 - **Use case:** "Recover the graph after a restart".
 - **Scope guard:** No write-ahead journal of its own.
 - **Release:** v0.2.0
-- **Status:** ready
+- **Status:** done, 2026-08-24. `Service.Reconcile` runs at start. 6 tests
+  cover it. It refuses 1 case rather than repairing it: when every row is
+  orphaned and there is more than 1 row, the likely cause is a wrong
+  `-data-dir`, and emptying the graph is the worst answer to a typo.
 
 ### 10. Ship an installable release
 
@@ -274,6 +277,7 @@ Grouped by the release they most likely serve.
 
 | Week | Feature | Release | Evidence |
 |---|---|---|---|
+| 2026-08-24 | Startup reconciliation of the graph and the snapshot root | unreleased | 6 tests in `internal/api/reconcile_test.go`; the daemon repairs at start and refuses a wrong data directory |
 | 2026-08-24 | Btrfs proven, and the acceptance test run | unreleased | CI runs 32677729798 and 32677974928: `TestBtrfsLive` PASS; snapshot 8 ms, diff 12 ms, 100 snapshots 21 MB on 5120 MB |
 | 2026-08-23 | MVP: engine, store, daemon, client, retention | unreleased | `./verify/verify.sh` green at `HEAD`; 74 tests, 0 failures |
 

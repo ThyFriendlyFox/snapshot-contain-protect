@@ -15,6 +15,7 @@ behavior change. The weekly cycle (WEEKLY.md step 5) refreshes it.
 | Daemon, 5 verbs | ✅ | 32 API tests; a manual run snapshotted in 1 ms and restored a working set |
 | snapctl client | ✅ | 5 client tests against a real service |
 | Implicit checkpoints | ✅ | 6 retention tests; the 50-snapshot budget holds |
+| Startup reconciliation | ✅ | 6 tests. Orphan handles removed, orphan rows removed, a wrong data directory refused rather than obeyed. |
 | Container layer | 🧊 | Seam only. START.md puts it after step 5; the MVP stops at step 5. |
 | CI | ✅ | `.github/workflows/ci.yml` runs the same command as local |
 | Unprivileged gate | ✅ | Gate step 6 reruns the engine and API suites as user 65534 |

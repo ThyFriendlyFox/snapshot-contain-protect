@@ -73,6 +73,17 @@ snapshot, rather than deleting the link. A restore of a workset with several
 paths restores them one at a time. If one path fails, the paths before it are
 already back.
 
+## Starting up
+
+The daemon reconciles the graph against the snapshot root before it serves.
+A snapshot on disk that no row names is removed. A row whose snapshot is
+gone is removed, and its children join its parent. Both counts are logged.
+
+One case is refused instead of repaired. If every row is missing from disk
+and there is more than 1 row, the daemon stops and says to check
+`-data-dir`: a typo in that flag looks exactly like total data loss, and
+deleting the graph would be the worst possible answer to it.
+
 ## The graph
 
 A snapshot's parent is the newest snapshot of its workset. A restore does not

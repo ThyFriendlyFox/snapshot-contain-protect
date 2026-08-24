@@ -42,14 +42,21 @@ say "make a $size_mb MB working set on btrfs"
 btrfs subvolume delete "$work" 2>/dev/null || rm -rf "$work"
 rm -rf "$data"
 btrfs subvolume create "$work" >/dev/null
+# --reflink=never matters. GNU cp on btrfs defaults to reflink=auto, which
+# would share extents between every copy: the working set would measure 5 GB
+# and occupy almost nothing, and claim 5 would prove nothing.
+copy() {
+  cp --reflink=never "$1" "$2" 2>/dev/null || cp "$1" "$2"
+}
 dd if=/dev/urandom of="$work/seed.bin" bs=1M count=10 status=none
 i=0
 while [ "$i" -lt $((size_mb / 10)) ]; do
-  cp "$work/seed.bin" "$work/file$i.bin"
+  copy "$work/seed.bin" "$work/file$i.bin"
   i=$((i + 1))
 done
 sync
-printf 'working set: %s\n' "$(du -sh "$work" | cut -f1)"
+printf 'working set: %s logical, %s allocated on the filesystem\n' \
+  "$(du -sh --apparent-size "$work" | cut -f1)" "$(du -sh "$work" | cut -f1)"
 
 start_daemon() {
   "$bin/snapshotd" -addr "$addr" -data-dir "$data" -backend btrfs >"$root/daemon.log" 2>&1 &

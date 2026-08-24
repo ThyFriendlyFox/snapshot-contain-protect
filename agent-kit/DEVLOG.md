@@ -41,6 +41,35 @@ Evidence: <commit / tag / gate run / screenshot>
 
 <!-- Entries below, newest first. -->
 
+## 2026-08-24 — Snapshot took its first real snapshot on Windows
+
+`TestVSSLive` passed in 7.45 seconds on a Windows runner. The backend made
+a real Volume Shadow Copy of `C:`, mounted it, read back what a file said
+before the snapshot, made a second copy, diffed the 2 and found exactly the
+1 changed file, then deleted both. That is the v0.1.0 platform doing the
+thing the project exists to do.
+
+It worked on the first attempt, and the reason is the probe. I had assumed
+the shadow copy device path was a handle the backend could read files from.
+It is not, and every one of items 4, 5 and 6 was built on that assumption.
+Finding out from a 10-step probe cost 1 run. Finding out from a written
+backend would have cost several rounds with the wrong interface already in
+place.
+
+The design the probe forced: a handle is a mount. Create makes 1 shadow copy
+per volume and links each into the handle; delete removes the links with
+rmdir, then the copies. Each source path maps to a subpath inside its
+volume's mount, and that single decision is what let the existing differ
+walk a volume-wide snapshot as if it were a subtree. Diff needed no new
+code at all.
+
+Restore is item 5 and refuses until it exists. The gate now has 7 steps, and
+2 of them run only where the filesystem they test is real: btrfs on a
+loopback image, VSS on an elevated Windows runner. Everywhere else they skip
+and say so.
+
+Evidence: CI run 32680184324, all 4 jobs green. 94 tests.
+
 ## 2026-08-24 — I probed VSS before building it, and the probe changed the design
 
 Item 4 is the VSS backend. No machine in this project runs Windows, so the

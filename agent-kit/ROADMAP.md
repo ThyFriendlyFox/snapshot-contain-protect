@@ -157,10 +157,11 @@ carry work that is already written and only needs proving.
 - **Scope guard:** Create and delete only. Diff and restore are item 5. The
   Volume Shadow Copy API directly; System Restore is never called.
 - **Release:** v0.1.0
-- **Status:** in progress (week of 2026-08-24). The backend is written and
-  unit-tested through a Runner seam, the way the Btrfs backend is. The live
-  gate is wired into the Windows CI job. Whether it holds against a real
-  provider is unknown until that job runs.
+- **Status:** done, 2026-08-24. `TestVSSLive` PASS in 7.45 s on
+  `windows-latest`, CI run 32680184324. It made a real shadow copy of `C:`,
+  mounted it, read the pre-snapshot contents back through the mount, made a
+  second, diffed the 2 and found exactly the changed file, and deleted both.
+  6 unit tests cover the command construction on any host.
 - **Note:** Needs Administrator. The daemon must detect elevation and refuse
   with a sentence, not a stack trace. Decide in this item whether it ships as
   a Windows service running as LocalSystem.
@@ -311,6 +312,7 @@ Grouped by the release they most likely serve.
 
 | Week | Feature | Release | Evidence |
 |---|---|---|---|
+| 2026-08-24 | The VSS backend: create, delete and diff | unreleased | `TestVSSLive` PASS in 7.45 s, CI run 32680184324, against a real shadow copy provider |
 | 2026-08-24 | The volume-scoped workset model | unreleased | `internal/engine/volume_test.go`, and 2 API tests; green on Linux and Windows in CI |
 | 2026-08-24 | The gate runs on Windows | unreleased | `verify-windows` green in CI run 32678743583 |
 | 2026-08-24 | Startup reconciliation of the graph and the snapshot root | unreleased | 6 tests in `internal/api/reconcile_test.go`; the daemon repairs at start and refuses a wrong data directory |

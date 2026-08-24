@@ -10,7 +10,7 @@ behavior change. The weekly cycle (WEEKLY.md step 5) refreshes it.
 | Copy backend | ✅ | 18 engine tests, also run as a normal user; 100 snapshots of 200 files stay under 100 MB; modes survive a restore |
 | Btrfs backend | ✅ | Proven. `TestBtrfsLive` PASS on a real btrfs filesystem in CI run 32677729798, 2026-08-24: subvolume created, snapshotted, file changed, restored, file came back. |
 | APFS backend | ❌ | Stub. Refuses with "not implemented". |
-| VSS backend | 🚧 | Create, delete and diff written; 6 unit tests through a Runner seam. Restore is item 5. Unproven against a real provider until the live gate runs. |
+| VSS backend | 🚧 | Create, delete and diff proven: `TestVSSLive` PASS in CI run 32680184324 against a real provider. Restore is item 5 and refuses until then. |
 | SQLite store | ✅ | 10 store tests; the graph survives a reopen |
 | Daemon, 5 verbs | ✅ | 32 API tests; a manual run snapshotted in 1 ms and restored a working set |
 | snapctl client | ✅ | 5 client tests against a real service |
@@ -29,7 +29,7 @@ States: ✅ done (gated) · 🚧 in progress · ❌ not started · 🧊 frozen/w
 
 ## Current week
 
-- **Shipping:** v0.1.0. Items 2, 3, 7 and 9 are done. Item 4 is written and waiting on its live gate. Item 1 needs branch protection, which is a repository setting the human applies.
+- **Shipping:** v0.1.0. Items 2, 3, 4, 7 and 9 are done. Item 5, VSS restore, is next. Item 1 needs branch protection, which is a repository setting the human applies.
 - **Last release:** none. The MVP sits on pull request 1, unmerged and untagged.
 - **Known red:** none. The gate is green locally and in CI. The Btrfs
   backend is proven in CI on a loopback image; no physical Btrfs machine has

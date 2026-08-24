@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ThyFriendlyFox/snapshot-contain-protect/internal/engine"
@@ -601,5 +602,30 @@ func TestRestoreThatLandedNeverReportsFailure(t *testing.T) {
 	}
 	if got.SafetyWarning == "" {
 		t.Error("the caller was not told which paths the nodes miss")
+	}
+}
+
+func TestWorksetReportsTheVolumesItCovers(t *testing.T) {
+	f := newFixture(t)
+	var list []worksetResponse
+	f.get("/worksets", http.StatusOK, &list)
+	if len(list) != 1 {
+		t.Fatalf("worksets = %d, want 1", len(list))
+	}
+	if len(list[0].Volumes) != 1 {
+		t.Fatalf("volumes = %v, want exactly 1 for a single-path workset", list[0].Volumes)
+	}
+	if !strings.HasPrefix(filepath.Clean(f.work), filepath.Clean(list[0].Volumes[0])) {
+		t.Fatalf("volume %q does not contain the workset path %q", list[0].Volumes[0], f.work)
+	}
+}
+
+func TestWorksetVolumesAreEmptyBeforeThePathExists(t *testing.T) {
+	f := newFixture(t)
+	later := filepath.Join(filepath.Dir(f.work), "not-yet-there")
+	var ws worksetResponse
+	f.post("/worksets", worksetRequest{Name: "later", Paths: []string{later}}, http.StatusCreated, &ws)
+	if len(ws.Volumes) != 0 {
+		t.Fatalf("volumes = %v, want none: the path is not there yet", ws.Volumes)
 	}
 }

@@ -137,7 +137,12 @@ carry work that is already written and only needs proving.
   backend decides what a snapshot must cover.
 - **Scope guard:** Model and validation only. No VSS calls in this item.
 - **Release:** v0.1.0
-- **Status:** ready
+- **Status:** done, 2026-08-24. `engine.VolumeOf` asks
+  `GetVolumePathNameW` on Windows and walks the device number on unix.
+  `GET /worksets` reports the volumes, `snapctl` names them when a workset
+  spans more than 1, and a path that does not exist yet reports none. A
+  multi-volume workset is handled, not refused: the backend makes 1 shadow
+  copy per volume.
 - **Note:** This is the model change VSS forces. A shadow copy covers a
   volume, not a directory. Getting it wrong here makes every later item wrong.
 
@@ -279,6 +284,7 @@ Grouped by the release they most likely serve.
 
 | Week | Feature | Release | Evidence |
 |---|---|---|---|
+| 2026-08-24 | The volume-scoped workset model | unreleased | `internal/engine/volume_test.go`, and 2 API tests; green on Linux and Windows in CI |
 | 2026-08-24 | The gate runs on Windows | unreleased | `verify-windows` green in CI run 32678743583 |
 | 2026-08-24 | Startup reconciliation of the graph and the snapshot root | unreleased | 6 tests in `internal/api/reconcile_test.go`; the daemon repairs at start and refuses a wrong data directory |
 | 2026-08-24 | Btrfs proven, and the acceptance test run | unreleased | CI runs 32677729798 and 32677974928: `TestBtrfsLive` PASS; snapshot 8 ms, diff 12 ms, 100 snapshots 21 MB on 5120 MB |

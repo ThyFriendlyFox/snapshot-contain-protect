@@ -54,6 +54,7 @@ rollback, once for the node the restore appends after it.
 | `copy.go` | Hardlink snapshots for development and CI hosts |
 | `apfs.go`, `vss.go` | Stubs that refuse cleanly |
 | `select.go` | Picks a backend by name, or the best one for the host |
+| `volume.go` | Which volume holds a path. VSS snapshots volumes, not directories |
 
 ## Store
 

@@ -54,7 +54,7 @@ declaration they act on.
 | `POST /restore` | `{"id":"01J...","confirm":true}` | The new snapshot node the restore appended, plus `safety_snapshot` and, when something was missed, `safety_warning` |
 | `DELETE /snapshots/<id>` | `?cascade=true` | `{"removed":["01J..."]}`. It refuses a node with children unless `cascade=true`. |
 | `POST /worksets` | `{"name":"proj-a","paths":["/home/u/proj"]}` | The workset |
-| `GET /worksets` | | Every workset |
+| `GET /worksets` | | Every workset, with the volumes it covers |
 | `GET /healthz` | | `{"status":"ok","backend":"btrfs"}` |
 
 A restore needs `confirm: true`, so an agent cannot roll back by accident.

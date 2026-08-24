@@ -37,6 +37,14 @@ type pruneResponse struct {
 	Removed []string `json:"removed"`
 }
 
+// worksetResponse is a workset plus the volumes it covers. The volumes are
+// computed on read, never stored: a path can move to another volume between
+// one call and the next.
+type worksetResponse struct {
+	store.Workset
+	Volumes []string `json:"volumes"`
+}
+
 // restoreResponse is the new snapshot node, plus what the safety snapshot
 // before it managed to cover. The node's own fields stay at the top level.
 type restoreResponse struct {
@@ -160,7 +168,12 @@ func (s *Service) handleCreateWorkset(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	write(w, http.StatusCreated, ws)
+	out, err := s.describeWorkset(ws)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	write(w, http.StatusCreated, out)
 }
 
 func (s *Service) handleListWorksets(w http.ResponseWriter, r *http.Request) {
@@ -169,7 +182,16 @@ func (s *Service) handleListWorksets(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	write(w, http.StatusOK, list)
+	out := make([]worksetResponse, 0, len(list))
+	for _, ws := range list {
+		described, err := s.describeWorkset(ws)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		out = append(out, described)
+	}
+	write(w, http.StatusOK, out)
 }
 
 func (s *Service) handleHealth(w http.ResponseWriter, r *http.Request) {

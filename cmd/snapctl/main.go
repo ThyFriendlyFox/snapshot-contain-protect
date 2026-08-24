@@ -104,13 +104,18 @@ func (c *client) workset(out io.Writer, args []string, raw bool) error {
 		return print(out, body)
 	}
 	var w struct {
-		Name  string   `json:"name"`
-		Paths []string `json:"paths"`
+		Name    string   `json:"name"`
+		Paths   []string `json:"paths"`
+		Volumes []string `json:"volumes"`
 	}
 	if err := json.Unmarshal(body, &w); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "%s covers %s\n", w.Name, strings.Join(w.Paths, " "))
+	if len(w.Volumes) > 1 {
+		// A backend that snapshots whole volumes needs 1 snapshot per volume.
+		fmt.Fprintf(out, "spans %d volumes: %s\n", len(w.Volumes), strings.Join(w.Volumes, " "))
+	}
 	return nil
 }
 
@@ -125,6 +130,7 @@ func (c *client) worksets(out io.Writer, raw bool) error {
 	var list []struct {
 		Name      string   `json:"name"`
 		Paths     []string `json:"paths"`
+		Volumes   []string `json:"volumes"`
 		Container bool     `json:"container"`
 	}
 	if err := json.Unmarshal(body, &list); err != nil {
@@ -132,6 +138,9 @@ func (c *client) worksets(out io.Writer, raw bool) error {
 	}
 	for _, w := range list {
 		line := fmt.Sprintf("%-16s %s", w.Name, strings.Join(w.Paths, " "))
+		if len(w.Volumes) > 1 {
+			line += fmt.Sprintf("  [%d volumes]", len(w.Volumes))
+		}
 		if w.Container {
 			line += "  [container]"
 		}

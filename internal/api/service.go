@@ -161,6 +161,30 @@ func (s *Service) CreateWorkset(ctx context.Context, name string, paths []string
 	return w, nil
 }
 
+// describeWorkset adds the volumes the workset covers. A path that is not
+// there yet has no volume, and that is reported as an empty list rather than
+// an error: a workset may be declared before its directory exists.
+func (s *Service) describeWorkset(w store.Workset) (worksetResponse, error) {
+	out := worksetResponse{Workset: w, Volumes: []string{}}
+	volumes, err := engine.VolumesOf(existingPaths(w.Paths))
+	if err != nil {
+		return out, err
+	}
+	out.Volumes = volumes
+	return out, nil
+}
+
+// existingPaths drops the paths that are not there yet.
+func existingPaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // ListWorksets returns every declared workset.
 func (s *Service) ListWorksets(ctx context.Context) ([]store.Workset, error) {
 	return s.store.ListWorksets(ctx)

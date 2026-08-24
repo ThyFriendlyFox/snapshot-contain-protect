@@ -19,6 +19,7 @@ behavior change. The weekly cycle (WEEKLY.md step 5) refreshes it.
 | Container layer | 🧊 | Seam only. START.md puts it after step 5; the MVP stops at step 5. |
 | CI | ✅ | `.github/workflows/ci.yml` runs the same command as local |
 | Unprivileged gate | ✅ | Gate step 6 reruns the engine and API suites as user 65534 |
+| Volume mapping | ✅ | `GetVolumePathNameW` on Windows, device-number walk on unix. Reported by `GET /worksets`. |
 | Windows gate | ✅ | `verify-windows` green on `windows-latest`, CI run 32678743583. The suite runs; no VSS backend exists yet. |
 | Acceptance test (START.md section 10) | ✅ | All 5 claims hold. CI run 32677974928, 2026-08-24, 5120 MB working set: snapshot 8 ms, diff 12 ms, exact restore, graph survived a restart, 100 snapshots cost 21 MB. |
 | CI actually running | 🚧 | First run green: `verify` and `verify-btrfs` both passed on pull request 1. Branch protection is not set, so red can still merge. ROADMAP item 1. |
@@ -28,7 +29,7 @@ States: ✅ done (gated) · 🚧 in progress · ❌ not started · 🧊 frozen/w
 
 ## Current week
 
-- **Shipping:** v0.1.0. Items 2, 7 and 9 are done. Item 1 needs branch protection, which is a repository setting the human applies. Item 3, the volume-scoped workset model, is next.
+- **Shipping:** v0.1.0. Items 2, 7 and 9 are done. Item 1 needs branch protection, which is a repository setting the human applies. Item 3 is done. Item 4, the VSS backend, is next.
 - **Last release:** none. The MVP sits on pull request 1, unmerged and untagged.
 - **Known red:** none. The gate is green locally and in CI. The Btrfs
   backend is proven in CI on a loopback image; no physical Btrfs machine has

@@ -55,7 +55,16 @@ implemented". The real implementation calls `fs_snapshot_create`.
 
 ## vss
 
-The Windows backend. It is a stub. The real implementation calls the Volume
+The Windows backend. It is a stub, and it is the v0.1.0 target.
+
+A shadow copy covers a **volume**, not a directory. `GET /worksets` reports
+the volumes each workset covers, so a caller can see how many shadow copies
+a snapshot will need. A workset spanning 2 volumes needs 2. The workset
+still scopes what diff and restore touch.
+
+Every other backend ignores volumes; for them the field is reporting only.
+
+The current stub. The real implementation calls the Volume
 Shadow Copy Service API directly. It does not call System Restore, which
 takes minutes and records registry state a rollback does not need.
 

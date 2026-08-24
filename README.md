@@ -140,7 +140,7 @@ The 5 verbs behave the same on every backend. Their cost does not.
 
 | Backend | Snapshot | Restore |
 |---|---|---|
-| btrfs | 8 ms on a 5 GB set, measured | Constant time. It swaps a subvolume. |
+| btrfs | 8 ms on a 5 GB set, measured | Constant time for a subvolume. A plain directory inside one is copied back, because swapping would restore its siblings. |
 | vss | About 2 seconds | Proportional to the working set. It copies out of the shadow copy. |
 | copy | Proportional to the file count | Proportional to the working set. |
 

@@ -66,6 +66,11 @@ type shadow struct {
 type source struct {
 	Path string `json:"path"` // absolute source path
 	Dir  string `json:"dir"`  // subtree name inside the handle
+	// Swappable marks a source the backend snapshotted whole, so a restore
+	// can put it back by swapping rather than copying. A source held inside
+	// a larger snapshot is not swappable: swapping would restore everything
+	// beside it that the caller never named.
+	Swappable bool `json:"swappable,omitempty"`
 }
 
 const manifestName = "manifest.json"

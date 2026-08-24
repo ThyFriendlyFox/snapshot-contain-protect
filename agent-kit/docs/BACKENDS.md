@@ -15,6 +15,23 @@ Restore creates a writable snapshot beside the live subvolume, deletes the
 live subvolume, and renames the new one into place. Root rights are required,
 as they are for every Btrfs subvolume operation.
 
+### A workset path that is not a subvolume
+
+btrfs snapshots a subvolume, never a plain directory. A declared path inside
+one is snapshotted through its enclosing subvolume and addressed as a subpath
+of that snapshot, which is exactly how the VSS backend addresses a path
+inside a volume.
+
+Restore then splits by what the caller declared:
+
+| The declared path is | Restore | Cost |
+|---|---|---|
+| a subvolume | swap it | constant |
+| a directory inside one | copy that subpath out of the snapshot | the size of the directory |
+
+The split is not an optimisation. Swapping the enclosing subvolume would
+restore every sibling the caller never named.
+
 ```sh
 snapshotd -backend btrfs -data-dir /mnt/data/snapshot
 ```

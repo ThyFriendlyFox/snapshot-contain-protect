@@ -53,7 +53,7 @@ elif [ -z "${SNAPSHOT_BTRFS_TEST_ROOT:-}" ]; then
   echo "SKIPPED LOUDLY: this host can run btrfs, but SNAPSHOT_BTRFS_TEST_ROOT is not set."
   echo "                Set it to a writable directory on a btrfs filesystem to prove the backend."
 else
-  go test -tags btrfs_live ./internal/engine/ -run TestBtrfsLive -v
+  go test -tags btrfs_live ./internal/engine/ -run "TestBtrfsLive" -v
 fi
 
 echo "== 6/7 vss gate =="

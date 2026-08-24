@@ -247,14 +247,28 @@ carry work that is already written and only needs proving.
 ### 8. A workset that covers a plain directory on Btrfs
 
 - **Promise:** A workset path that is a directory and not a subvolume is
-  snapshotted, and `snapctl workset` states which paths it converted.
-- **Evidence:** A live gate case that declares a plain directory and restores
-  it.
-- **Use case:** "Checkpoint every step of a long task".
-- **Scope guard:** No automatic conversion of a directory a person did not
-  name.
+  snapshotted through its enclosing subvolume, and a restore of it returns
+  that directory and nothing outside it.
+- **Evidence:** A live gate case that declares a plain directory inside a
+  subvolume, changes a file beside it and inside it, restores, and shows the
+  file outside the declared path untouched.
+- **Use case:** "Checkpoint every step of a long task" — an agent points at
+  a project directory, not at a subvolume it must create first.
+- **Scope guard:** No conversion of a directory into a subvolume. Nothing a
+  person did not name is ever restored.
 - **Release:** v0.2.0
-- **Status:** ready
+- **Status:** in progress (week of 2026-08-24). Written, with 3 unit tests
+  and a live gate case. The live half runs in the `verify-btrfs` CI job.
+- **Note:** The promise was sharpened on 2026-08-24, before any code. It
+  said "states which paths it converted", which assumed the backend would
+  turn a directory into a subvolume. That is destructive and the scope guard
+  already forbade it, so the promise contradicted its own item.
+- **The design:** snapshot the enclosing subvolume and map the declared path
+  to a subpath inside it, which is exactly what the VSS backend does with a
+  volume. Restore then splits by what was declared. A source that is itself
+  a subvolume keeps the constant-time swap. A source that is a plain
+  directory is copied out of the snapshot, because swapping its enclosing
+  subvolume would restore every sibling the caller never named.
 
 ### 9. Reconcile the graph and the snapshot root at start
 

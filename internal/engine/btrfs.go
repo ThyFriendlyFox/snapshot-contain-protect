@@ -62,13 +62,32 @@ func (b *Btrfs) Create(ctx context.Context, id string, sources []string) (string
 
 	m := manifest{}
 	for i, src := range sources {
-		dir := subtreeName(i, src)
-		dest := filepath.Join(handle, dir)
-		if _, err := b.run(ctx, "btrfs", "subvolume", "snapshot", "-r", src, dest); err != nil {
+		// btrfs snapshots a subvolume, never a plain directory. A directory
+		// inside one is snapshotted through its subvolume and addressed as a
+		// subpath, the way the VSS backend addresses a path inside a volume.
+		subvol, err := b.enclosingSubvolume(ctx, src)
+		if err != nil {
 			b.cleanup(ctx, handle, m)
 			return "", err
 		}
-		m.Sources = append(m.Sources, source{Path: src, Dir: dir})
+		dir := subtreeName(i, subvol)
+		dest := filepath.Join(handle, dir)
+		if _, err := b.run(ctx, "btrfs", "subvolume", "snapshot", "-r", subvol, dest); err != nil {
+			b.cleanup(ctx, handle, m)
+			return "", err
+		}
+
+		entry := source{Path: src, Dir: dir, Swappable: subvol == src}
+		if !entry.Swappable {
+			rel, err := filepath.Rel(subvol, src)
+			if err != nil {
+				b.cleanup(ctx, handle, m)
+				return "", fmt.Errorf("%w: %q is not inside %q", ErrBadSource, src, subvol)
+			}
+			entry.Dir = filepath.Join(dir, rel)
+		}
+		m.Sources = append(m.Sources, entry)
+		m.Shadows = append(m.Shadows, shadow{Volume: subvol, Dir: dir})
 	}
 	if err := writeManifest(handle, m); err != nil {
 		b.cleanup(ctx, handle, m)
@@ -83,7 +102,9 @@ func (b *Btrfs) Delete(ctx context.Context, handle string) error {
 		// A handle without a manifest is already broken. Remove what is there.
 		return os.RemoveAll(handle)
 	}
-	for _, s := range m.Sources {
+	// Shadows names 1 entry per snapshot taken. Sources can name several
+	// paths inside 1 of them, so deleting per source would delete twice.
+	for _, s := range m.Shadows {
 		if _, err := b.run(ctx, "btrfs", "subvolume", "delete", filepath.Join(handle, s.Dir)); err != nil {
 			return err
 		}
@@ -108,6 +129,18 @@ func (b *Btrfs) Restore(ctx context.Context, handle string) error {
 		return err
 	}
 	for _, s := range m.Sources {
+		if !s.Swappable {
+			// The snapshot holds more than the caller declared. Swapping the
+			// subvolume would restore every sibling they never named, so
+			// copy just the declared path back out.
+			if err := checkDestination(s.Path); err != nil {
+				return err
+			}
+			if err := swapIn(ctx, filepath.Join(handle, s.Dir), s.Path, copyBytes); err != nil {
+				return fmt.Errorf("restore %s: %w", s.Path, err)
+			}
+			continue
+		}
 		src := filepath.Join(handle, s.Dir)
 		staged := s.Path + ".snapshot-restore"
 
@@ -151,8 +184,25 @@ func (b *Btrfs) clearStaged(ctx context.Context, staged string) {
 }
 
 func (b *Btrfs) cleanup(ctx context.Context, handle string, m manifest) {
-	for _, s := range m.Sources {
+	for _, s := range m.Shadows {
 		_, _ = b.run(ctx, "btrfs", "subvolume", "delete", filepath.Join(handle, s.Dir))
 	}
 	_ = os.RemoveAll(handle)
+}
+
+// enclosingSubvolume returns path itself when it is a subvolume, or the
+// nearest ancestor that is one. A btrfs filesystem always has a subvolume at
+// its root, so the walk terminates there.
+func (b *Btrfs) enclosingSubvolume(ctx context.Context, path string) (string, error) {
+	current := filepath.Clean(path)
+	for {
+		if _, err := b.run(ctx, "btrfs", "subvolume", "show", current); err == nil {
+			return current, nil
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", fmt.Errorf("%w: no btrfs subvolume contains %q", ErrBadSource, path)
+		}
+		current = parent
+	}
 }

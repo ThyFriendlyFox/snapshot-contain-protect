@@ -194,9 +194,10 @@ carry work that is already written and only needs proving.
 - **Use case:** "Undo a file operation" on Linux.
 - **Scope guard:** No new verbs. No Windows work.
 - **Release:** v0.2.0
-- **Status:** in progress. Half proven on 2026-08-24: `TestBtrfsLive` PASS
-  on a real btrfs filesystem in CI run 32677729798. The acceptance numbers
-  are still missing; that job skips on a pull request and runs on demand.
+- **Status:** done, 2026-08-24. `TestBtrfsLive` PASS on a real btrfs
+  filesystem (run 32677729798). All 5 acceptance claims hold (run
+  32677974928) on a 5120 MB working set: snapshot 8 ms, diff 12 ms, exact
+  restore, graph survived a restart, 100 snapshots cost 21 MB.
 
 ### 8. A workset that covers a plain directory on Btrfs
 
@@ -273,6 +274,7 @@ Grouped by the release they most likely serve.
 
 | Week | Feature | Release | Evidence |
 |---|---|---|---|
+| 2026-08-24 | Btrfs proven, and the acceptance test run | unreleased | CI runs 32677729798 and 32677974928: `TestBtrfsLive` PASS; snapshot 8 ms, diff 12 ms, 100 snapshots 21 MB on 5120 MB |
 | 2026-08-23 | MVP: engine, store, daemon, client, retention | unreleased | `./verify/verify.sh` green at `HEAD`; 74 tests, 0 failures |
 
 ## Explicitly not doing

@@ -41,6 +41,37 @@ Evidence: <commit / tag / gate run / screenshot>
 
 <!-- Entries below, newest first. -->
 
+## 2026-08-24 — The acceptance test ran, and every claim in the spec holds
+
+START.md section 10 has been the open question since day 1. Today it has
+numbers. On a 5120 MB working set on btrfs, in CI run 32677974928:
+
+- A snapshot took 8 ms. The spec allows 1000 ms.
+- A diff of 2 snapshots differing by 1 file took 12 ms, and named exactly
+  that 1 file. The spec allows 2000 ms.
+- A restore returned the working set to its exact prior state. The test
+  compares an md5 of every file before and after.
+- The graph survived a daemon restart with all 4 nodes.
+- 100 sequential snapshots cost 21 MB. The spec allows 100 MB.
+
+The first run of that test reported 6 MB for the 100 snapshots, and I did
+not publish it. GNU cp on btrfs defaults to `--reflink=auto`, so the 512
+copies that build the working set may have shared extents: the set would
+measure 5 GB and hold almost no distinct data, and the number would be a
+lie by construction. With `--reflink=never` the figure more than tripled,
+to 21 MB. The suspicion was worth the rerun.
+
+I also put the gate on Windows for the first time, and it failed on the
+first step. Git on Windows checks out CRLF, gofmt reads a CRLF file as
+unformatted, and all 26 files were listed. A `.gitattributes` pinning LF
+fixes it. The Windows suites now skip loudly where Windows cannot hold a
+unix guarantee: creating a symlink needs Developer Mode or elevation, and
+`os.Chmod` there only toggles the read-only attribute, so modes and ACLs do
+not survive a restore. Both are written down as limits rather than hidden.
+
+Evidence: CI runs 32677729798 and 32677974928. `./verify/verify.sh` green
+locally, 74 tests, 0 failures.
+
 ## 2026-08-24 — CI ran for the first time, and btrfs is real
 
 Two things happened today that the project had been asserting rather than

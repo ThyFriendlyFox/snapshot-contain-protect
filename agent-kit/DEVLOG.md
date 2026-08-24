@@ -41,6 +41,39 @@ Evidence: <commit / tag / gate run / screenshot>
 
 <!-- Entries below, newest first. -->
 
+## 2026-08-24 — v0.1.0 is feature-complete, and retention learned to distrust itself
+
+Items 5 and 6 landed, which finishes the Windows feature work.
+
+Restore needed no VSS code at all. Once a snapshot is a readable tree,
+putting it back is the same work the copy backend already did, so both call
+`restoreTrees` now. VSS restore inherited 3 review rounds of hardening it
+never had to earn: byte copies instead of links, a refusal when the
+destination has become a symlink, and staging beside the destination so a
+failure leaves the working set untouched.
+
+Item 6 was 2 problems wearing 1 hat. The stated one is the budget: a Volume
+Shadow Copy Service at its storage cap does not refuse the next snapshot, it
+deletes the oldest. So retention now keeps the smaller of `-auto-keep` and
+what the provider will hold, leaves 1 slot free, and logs which limit is
+binding.
+
+The unstated one is worse. Prevention can fail, and when it does the mount
+stays a directory after the copy under it is gone. The handle proves
+nothing. So reconciliation asks the backend whether each snapshot is still
+real, and drops the rows the provider evicted.
+
+That collided with a safety valve I built earlier. Reconciliation refuses to
+empty the graph when every row is missing, because a typo in `-data-dir`
+looks exactly like total data loss. Eviction tripped it. The 2 conditions
+are not the same and I had conflated them: a missing handle is ambiguous and
+deserves the refusal, while eviction is a fact reported by the provider with
+the handle still sitting there. The refusal now counts only the missing
+handles.
+
+Evidence: `./verify/verify.sh` green, 101 tests, 0 failures, clean under
+`-race`. CI run 32680584229 for the restore half.
+
 ## 2026-08-24 — Snapshot took its first real snapshot on Windows
 
 `TestVSSLive` passed in 7.45 seconds on a Windows runner. The backend made

@@ -201,10 +201,9 @@ carry work that is already written and only needs proving.
   subpath under the mount, which is also what scopes a volume-wide snapshot
   down to the declared paths.
 - **Release:** v0.1.0
-- **Status:** in progress (week of 2026-08-24). Diff was done by item 4:
-  the mount makes a shadow copy look like any tree. Restore now shares
-  `restoreTrees` with the copy backend. The live gate covers it. Waiting on
-  the Windows job.
+- **Status:** done, 2026-08-24. `TestVSSLive` PASS in CI run 32680584229,
+  restoring through the mount and checking that an extra file did not
+  survive. Diff came free with item 4.
 - **Note:** Restore is O(changed bytes) here, not a swap. The README now
   carries a table splitting snapshot and restore cost by backend.
 
@@ -218,9 +217,17 @@ carry work that is already written and only needs proving.
 - **Use case:** "Free disk space".
 - **Scope guard:** Count and provider limits. Age and disk budget are v0.3.0.
 - **Release:** v0.1.0
-- **Status:** blocked on item 4
-- **Note:** About 64 shadow copies per volume, inside a shadow storage quota.
-  The current budget of 50 does not know either number exists.
+- **Status:** done, 2026-08-24. Retention keeps the smaller of `-auto-keep`
+  and what the provider will hold, and logs which one is binding. It leaves
+  1 slot free, so the next snapshot does not force an eviction between the
+  prune and the write.
+- **Note:** Prevention is only half. A provider at its cap deletes the
+  oldest copy silently, and a VSS mount stays a directory after the copy
+  under it is gone, so the handle proves nothing. Reconciliation now asks
+  the backend whether each snapshot is still real and drops the rows the
+  provider evicted. It counts those separately from missing handles: a
+  wrong `-data-dir` is ambiguous and gets refused, eviction is a fact from
+  the provider and gets acted on.
 
 ### 7. Prove the Btrfs backend on a Btrfs host
 
@@ -315,6 +322,8 @@ Grouped by the release they most likely serve.
 
 | Week | Feature | Release | Evidence |
 |---|---|---|---|
+| 2026-08-24 | Retention inside the provider's budget, and eviction detection | unreleased | 3 budget tests and 2 eviction tests; `Budgeter` and `Verifier` seams |
+| 2026-08-24 | VSS restore | unreleased | `TestVSSLive` PASS in CI run 32680584229, restoring through the mount |
 | 2026-08-24 | The VSS backend: create, delete and diff | unreleased | `TestVSSLive` PASS in 7.45 s, CI run 32680184324, against a real shadow copy provider |
 | 2026-08-24 | The volume-scoped workset model | unreleased | `internal/engine/volume_test.go`, and 2 API tests; green on Linux and Windows in CI |
 | 2026-08-24 | The gate runs on Windows | unreleased | `verify-windows` green in CI run 32678743583 |

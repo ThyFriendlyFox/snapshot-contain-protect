@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ThyFriendlyFox/snapshot-contain-protect/internal/engine"
 	"github.com/ThyFriendlyFox/snapshot-contain-protect/internal/store"
 )
 
@@ -143,5 +144,63 @@ func TestPruneAllCoversEveryWorkset(t *testing.T) {
 		if len(list) != 2 {
 			t.Fatalf("%s graph size = %d, want 2", name, len(list))
 		}
+	}
+}
+
+// budgetedEngine reports a provider cap smaller than the configured budget.
+type budgetedEngine struct {
+	engine.Engine
+	max int
+	ok  bool
+}
+
+func (b budgetedEngine) Budget(context.Context, []string) (int, bool, error) {
+	return b.max, b.ok, nil
+}
+
+func TestProviderBudgetBeatsAutoKeepWhenSmaller(t *testing.T) {
+	f := newFixture(t)
+	f.setKeep(50)
+	// The provider will hold 4. Retention must prune to 3, leaving a slot so
+	// the next snapshot does not force the provider to evict.
+	f.svc.engine = budgetedEngine{Engine: f.svc.engine, max: 4, ok: true}
+
+	for i := 0; i < 8; i++ {
+		f.snapshot("auto", true)
+	}
+	var list []store.Snapshot
+	f.get("/snapshots?workset=proj-a", http.StatusOK, &list)
+	if len(list) != 3 {
+		t.Fatalf("graph size = %d, want 3: the provider allows 4 and 1 slot stays free", len(list))
+	}
+}
+
+func TestAutoKeepWinsWhenTheProviderIsRoomier(t *testing.T) {
+	f := newFixture(t)
+	f.setKeep(2)
+	f.svc.engine = budgetedEngine{Engine: f.svc.engine, max: 100, ok: true}
+
+	for i := 0; i < 6; i++ {
+		f.snapshot("auto", true)
+	}
+	var list []store.Snapshot
+	f.get("/snapshots?workset=proj-a", http.StatusOK, &list)
+	if len(list) != 2 {
+		t.Fatalf("graph size = %d, want the configured 2", len(list))
+	}
+}
+
+func TestABackendWithNoBudgetKeepsTheConfiguredOne(t *testing.T) {
+	f := newFixture(t)
+	f.setKeep(2)
+	f.svc.engine = budgetedEngine{Engine: f.svc.engine, max: 1, ok: false}
+
+	for i := 0; i < 5; i++ {
+		f.snapshot("auto", true)
+	}
+	var list []store.Snapshot
+	f.get("/snapshots?workset=proj-a", http.StatusOK, &list)
+	if len(list) != 2 {
+		t.Fatalf("graph size = %d, want the configured 2 when the provider reports no cap", len(list))
 	}
 }

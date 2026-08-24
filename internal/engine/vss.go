@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -183,6 +184,100 @@ func (v *VSS) Diff(ctx context.Context, from, to string) (Change, error) {
 // a restore is proportional to the size of the working set.
 func (v *VSS) Restore(ctx context.Context, handle string) error {
 	return restoreTrees(ctx, handle)
+}
+
+// Budget reports how many shadow copies the provider will still hold on the
+// volumes these paths live on. It reads the shadow storage the provider has
+// allocated, because the cap is a size and the eviction it causes is silent.
+func (v *VSS) Budget(ctx context.Context, sources []string) (int, bool, error) {
+	volumes, err := VolumesOf(sources)
+	if err != nil {
+		return 0, false, err
+	}
+	smallest := -1
+	for _, volume := range volumes {
+		max, used, count, err := v.shadowStorage(ctx, volume)
+		if err != nil {
+			return 0, false, err
+		}
+		if max <= 0 || count <= 0 || used <= 0 {
+			// Nothing to divide by yet. The first snapshots on a volume run
+			// against the count budget alone.
+			continue
+		}
+		// The average copy so far is the only estimate available. A provider
+		// reports sizes, not a number of copies it will keep.
+		average := used / count
+		if average <= 0 {
+			continue
+		}
+		fits := int(max / average)
+		if smallest < 0 || fits < smallest {
+			smallest = fits
+		}
+	}
+	if smallest < 0 {
+		return 0, false, nil
+	}
+	return smallest, true, nil
+}
+
+// shadowStorage reads the provider's cap, its current use, and how many
+// copies that use covers.
+func (v *VSS) shadowStorage(ctx context.Context, volume string) (max, used, count int64, err error) {
+	script := `$v = Get-CimInstance Win32_ShadowStorage | Select-Object -First 1; ` +
+		`$n = (Get-CimInstance Win32_ShadowCopy | Measure-Object).Count; ` +
+		`Write-Output ("" + $v.MaxSpace + "|" + $v.UsedSpace + "|" + $n)`
+	out, err := v.run(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("shadow storage of %s: %w", volume, err)
+	}
+	fields := strings.Split(lastLine(string(out)), "|")
+	if len(fields) != 3 {
+		return 0, 0, 0, fmt.Errorf("shadow storage of %s: cannot read %q", volume, out)
+	}
+	max = parseInt64(fields[0])
+	used = parseInt64(fields[1])
+	count = parseInt64(fields[2])
+	return max, used, count, nil
+}
+
+// Exists reports whether the provider still holds every shadow copy this
+// handle names. A mount stays a directory after the copy under it is gone, so
+// the directory proves nothing.
+func (v *VSS) Exists(ctx context.Context, handle string) (bool, error) {
+	m, err := readManifest(handle)
+	if err != nil {
+		return false, nil
+	}
+	if len(m.Shadows) == 0 {
+		return false, nil
+	}
+	out, err := v.run(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command",
+		`Get-CimInstance Win32_ShadowCopy | ForEach-Object { $_.ID }`)
+	if err != nil {
+		return false, err
+	}
+	live := map[string]bool{}
+	for _, line := range strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n") {
+		if id := strings.TrimSpace(line); id != "" {
+			live[strings.ToUpper(id)] = true
+		}
+	}
+	for _, s := range m.Shadows {
+		if !live[strings.ToUpper(s.ID)] {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func parseInt64(s string) int64 {
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // mountedSubpath maps a source path to its place inside the handle.

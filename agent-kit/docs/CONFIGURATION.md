@@ -25,7 +25,7 @@ what the snapshots on disk mean.
 | `-addr` | string | `127.0.0.1:7099` | Loopback address to listen on. A non-loopback address is refused. |
 | `-data-dir` | path | `$HOME/.local/share/snapshot` | Holds `snapshots/` and `snapshot.db`. |
 | `-backend` | string | `auto` | `auto`, `btrfs`, `copy`, `apfs` or `vss`. `auto` picks Btrfs when it runs here, otherwise `copy`. A named backend that cannot run is an error. |
-| `-auto-keep` | integer | `50` | Auto snapshots kept per workset. `0` turns retention off. |
+| `-auto-keep` | integer | `50` | Auto snapshots kept per workset. `0` turns retention off. A backend whose provider holds fewer wins: on Windows the shadow storage cap decides, and the daemon logs which limit is binding. |
 | `-prune-interval` | duration | `10m` | How often retention runs. `0` turns the timer off. |
 | `-verbose` | boolean | `false` | Log at debug level. |
 

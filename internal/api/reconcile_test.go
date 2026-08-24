@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ThyFriendlyFox/snapshot-contain-protect/internal/engine"
 	"github.com/ThyFriendlyFox/snapshot-contain-protect/internal/store"
 )
 
@@ -148,5 +149,55 @@ func TestReconcileAtStartReportsAndSucceeds(t *testing.T) {
 	f.snapshot("first", false)
 	if err := f.svc.ReconcileAtStart(context.Background(), quietLogger()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// evictingEngine reports that the provider deleted the snapshot behind every
+// handle, the way VSS behaves when it reaches its shadow storage cap.
+type evictingEngine struct {
+	engine.Engine
+	alive bool
+}
+
+func (e evictingEngine) Exists(context.Context, string) (bool, error) { return e.alive, nil }
+
+func TestReconcileDropsRowsTheProviderEvicted(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	f.setKeep(0)
+	f.snapshot("first", false)
+	f.snapshot("second", false)
+
+	// The handles are still there. On a backend whose storage belongs to
+	// somebody else, that proves nothing.
+	f.svc.engine = evictingEngine{Engine: f.svc.engine, alive: false}
+
+	rep, err := f.svc.Reconcile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Evicted != 2 {
+		t.Fatalf("repair = %s, want 2 evicted", rep)
+	}
+	var list []store.Snapshot
+	f.get("/snapshots?workset=proj-a", http.StatusOK, &list)
+	if len(list) != 0 {
+		t.Fatalf("graph still names %d snapshots the provider deleted", len(list))
+	}
+}
+
+func TestReconcileKeepsRowsTheProviderStillHolds(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	f.setKeep(0)
+	f.snapshot("first", false)
+	f.svc.engine = evictingEngine{Engine: f.svc.engine, alive: true}
+
+	rep, err := f.svc.Reconcile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Empty() {
+		t.Fatalf("repair = %s, want nothing touched", rep)
 	}
 }

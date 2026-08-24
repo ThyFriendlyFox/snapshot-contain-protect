@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ThyFriendlyFox/snapshot-contain-protect/internal/engine"
 	"github.com/ThyFriendlyFox/snapshot-contain-protect/internal/store"
 )
 
@@ -40,7 +41,8 @@ func (s *Service) pruneAutoLocked(ctx context.Context, worksetID string) error {
 		}
 	}
 	// ListSnapshots orders oldest first, so the excess is at the front.
-	excess := len(candidates) - s.cfg.AutoKeep
+	keep := s.budgetFor(ctx, worksetID)
+	excess := len(candidates) - keep
 	if excess <= 0 {
 		return nil
 	}
@@ -78,6 +80,45 @@ func (s *Service) pruneAutoLocked(ctx context.Context, worksetID string) error {
 		return fmt.Errorf("retention kept %d snapshot(s) whose handle could not be freed", stuck)
 	}
 	return nil
+}
+
+// budgetFor returns the number of auto snapshots to keep: the configured
+// budget, or the provider's, whichever is smaller.
+//
+// A provider that reaches its cap does not refuse the next snapshot. It
+// deletes the oldest one, and the graph would go on naming it. Pruning first
+// keeps the graph true.
+func (s *Service) budgetFor(ctx context.Context, worksetID string) int {
+	keep := s.cfg.AutoKeep
+	budgeter, ok := s.engine.(engine.Budgeter)
+	if !ok {
+		return keep
+	}
+	w, err := s.store.WorksetByID(ctx, worksetID)
+	if err != nil {
+		return keep
+	}
+	usable, _ := s.usablePaths(w)
+	if len(usable) == 0 {
+		return keep
+	}
+	max, ok, err := budgeter.Budget(ctx, usable)
+	if err != nil {
+		s.log.Warn("cannot read the provider budget; keeping the configured one",
+			"workset", w.Name, "auto_keep", keep, "error", err)
+		return keep
+	}
+	if !ok || max >= keep {
+		return keep
+	}
+	// Leave 1 slot free, so the next snapshot does not force an eviction
+	// between this prune and that write.
+	if max > 0 {
+		max--
+	}
+	s.log.Info("the provider is the binding limit, not auto-keep",
+		"workset", w.Name, "auto_keep", keep, "provider_allows", max)
+	return max
 }
 
 // PruneAll runs retention over every workset. The timer calls it, and so does

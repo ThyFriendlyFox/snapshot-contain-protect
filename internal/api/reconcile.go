@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ThyFriendlyFox/snapshot-contain-protect/internal/engine"
 	"github.com/ThyFriendlyFox/snapshot-contain-protect/internal/store"
 )
 
@@ -14,13 +15,17 @@ import (
 type Repair struct {
 	OrphanHandles int // snapshots on disk that no row names
 	OrphanRows    int // rows whose snapshot is gone from disk
+	Evicted       int // rows whose provider deleted the snapshot underneath
 }
 
 // Empty reports whether there was nothing to repair.
-func (r Repair) Empty() bool { return r.OrphanHandles == 0 && r.OrphanRows == 0 }
+func (r Repair) Empty() bool {
+	return r.OrphanHandles == 0 && r.OrphanRows == 0 && r.Evicted == 0
+}
 
 func (r Repair) String() string {
-	return fmt.Sprintf("%d orphan handle(s), %d orphan row(s)", r.OrphanHandles, r.OrphanRows)
+	return fmt.Sprintf("%d orphan handle(s), %d orphan row(s), %d evicted by the provider",
+		r.OrphanHandles, r.OrphanRows, r.Evicted)
 }
 
 // Reconcile makes the graph and the snapshot root agree. A daemon killed
@@ -55,16 +60,45 @@ func (s *Service) Reconcile(ctx context.Context) (Repair, error) {
 		}
 	}
 
+	verifier, canVerify := s.engine.(engine.Verifier)
+
 	missing := make([]store.Snapshot, 0)
+	absent := 0
 	for _, sn := range rows {
 		if _, err := os.Stat(sn.FSHandle); err != nil {
 			if !os.IsNotExist(err) {
 				return rep, err
 			}
+			absent++
+			missing = append(missing, sn)
+			continue
+		}
+		if !canVerify {
+			continue
+		}
+		// The handle is there, which proves nothing on a backend whose
+		// storage belongs to somebody else. A VSS mount stays a directory
+		// after the provider evicts the shadow copy under it, and the graph
+		// would go on offering a snapshot that cannot be read.
+		alive, err := verifier.Exists(ctx, sn.FSHandle)
+		if err != nil {
+			s.log.Warn("cannot verify a snapshot; keeping its row",
+				"snapshot", sn.ID, "error", err)
+			continue
+		}
+		if !alive {
+			rep.Evicted++
 			missing = append(missing, sn)
 		}
 	}
-	if len(rows) > 1 && len(missing) == len(rows) {
+	// The refusal counts only the handles that are not on disk. A wrong
+	// -data-dir looks exactly like that, and emptying the graph would be the
+	// worst answer to a typo.
+	//
+	// Eviction is not the same condition and is not ambiguous: the handle is
+	// there and the provider says the snapshot behind it is gone. Removing
+	// those rows is the only honest answer, however many there are.
+	if len(rows) > 1 && absent == len(rows) {
 		return rep, fmt.Errorf(
 			"every snapshot in the graph is missing from %s: refusing to delete %d rows. "+
 				"check that -data-dir points at the right directory",
@@ -81,8 +115,8 @@ func (s *Service) Reconcile(ctx context.Context) (Repair, error) {
 		if _, err := s.store.DeleteSnapshot(ctx, sn.ID, false); err != nil {
 			return rep, err
 		}
-		rep.OrphanRows++
 	}
+	rep.OrphanRows = len(missing) - rep.Evicted
 
 	// A snapshot on disk that no row names.
 	entries, err := os.ReadDir(s.cfg.SnapshotRoot())
@@ -126,6 +160,7 @@ func (s *Service) ReconcileAtStart(ctx context.Context, log *slog.Logger) error 
 		return nil
 	}
 	log.Warn("repaired the graph at start",
-		"orphan_handles", rep.OrphanHandles, "orphan_rows", rep.OrphanRows)
+		"orphan_handles", rep.OrphanHandles, "orphan_rows", rep.OrphanRows,
+		"evicted_by_provider", rep.Evicted)
 	return nil
 }

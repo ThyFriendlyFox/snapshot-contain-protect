@@ -95,6 +95,13 @@ Mark a snapshot `auto` when an agent takes it before an action. Snapshot
 keeps the last 50 auto snapshots per workset and every manual one. It never
 prunes a snapshot that a manual snapshot descends from.
 
+On Windows the provider has the final say. A Volume Shadow Copy Service at
+its storage cap does not refuse the next snapshot: it deletes the oldest one.
+So retention keeps the smaller of `-auto-keep` and what the provider will
+hold, and leaves 1 slot free. If a copy is evicted anyway, the daemon finds
+it at start and removes the row, because a graph that names a snapshot
+nobody can read is worse than a shorter graph.
+
 ## What a restore costs
 
 The 5 verbs behave the same on every backend. Their cost does not.

@@ -10,11 +10,11 @@
 
 ## Workflow
 
-1. Branch from `{{DEFAULT_BRANCH}}`: `feat/…`, `fix/…`, `docs/…`, `chore/…`.
+1. Branch from `main`: `feat/…`, `fix/…`, `docs/…`, `chore/…`.
 2. Change + tests for any behavior change.
-3. `{{VERIFY_CMD}}` green.
+3. `./verify/verify.sh` green.
 4. Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`,
    `test:`, `ci:`; `!` for breaking).
-5. PR against `{{DEFAULT_BRANCH}}`; fill the template; CI green +
+5. PR against `main`; fill the template; CI green +
    comments resolved before merge. Squash-merge; PR title becomes the
    commit message, so make it a valid Conventional Commit.

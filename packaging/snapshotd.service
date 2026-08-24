@@ -1,0 +1,31 @@
+# A systemd user unit for the Snapshot daemon.
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp packaging/snapshotd.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now snapshotd
+#
+# The Btrfs backend needs root for subvolume operations. To use it, install
+# this as a system unit under /etc/systemd/system/ instead and drop the
+# --user flags.
+
+[Unit]
+Description=Snapshot: a filesystem checkpoint service for computer-use agents
+Documentation=https://github.com/ThyFriendlyFox/snapshot-contain-protect
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/snapshotd -addr 127.0.0.1:7099
+Restart=on-failure
+RestartSec=2
+
+# The daemon binds loopback and holds no secrets. Give it nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,44 @@
+name: Release
+on:
+  push:
+    tags: ['v*.*.*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build artifacts
+        run: |
+          mkdir -p dist stage
+          version="${GITHUB_REF_NAME}"
+          for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
+            os=${target%/*}; arch=${target#*/}
+            ext=""
+            [ "$os" = "windows" ] && ext=".exe"
+            pkg="stage/snapshot-$version-$os-$arch"
+            mkdir -p "$pkg"
+            GOOS=$os GOARCH=$arch go build -o "$pkg/snapshotd$ext" ./cmd/snapshotd
+            GOOS=$os GOARCH=$arch go build -o "$pkg/snapctl$ext" ./cmd/snapctl
+            cp README.md LICENSE "$pkg/"
+            if [ "$os" = "windows" ]; then
+              cp packaging/install-windows.ps1 "$pkg/"
+              (cd stage && zip -qr "../dist/$(basename "$pkg").zip" "$(basename "$pkg")")
+            else
+              cp packaging/snapshotd.service "$pkg/"
+              tar -czf "dist/$(basename "$pkg").tar.gz" -C stage "$(basename "$pkg")"
+            fi
+          done
+          (cd dist && sha256sum * > SHA256SUMS)
+          ls -l dist
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/*

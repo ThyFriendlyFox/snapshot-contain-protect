@@ -1,0 +1,101 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify
+        run: ./verify/verify.sh
+
+  # Windows is the v0.1.0 platform and no development host here runs it.
+  # This job is the only place Windows behaviour is real.
+  verify-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify
+        shell: bash
+        run: ./verify/verify.sh
+      - name: Verify, with the vss gate live
+        shell: bash
+        env:
+          SNAPSHOT_VSS_TEST_ROOT: C:\snapshot-vss-test
+        run: |
+          mkdir -p "/c/snapshot-vss-test"
+          ./verify/verify.sh
+
+  # The btrfs backend is the one the MVP targets, and no development host here
+  # runs btrfs. A loopback image on the runner is where it gets proven.
+  verify-btrfs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Make a btrfs filesystem
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y btrfs-progs
+          truncate -s 8G "$RUNNER_TEMP/btrfs.img"
+          mkfs.btrfs -q "$RUNNER_TEMP/btrfs.img"
+          sudo mkdir -p /mnt/btrfs
+          # user_subvol_rm_allowed lets the runner's own user delete a
+          # subvolume, so the gate does not need root.
+          sudo mount -o loop,user_subvol_rm_allowed "$RUNNER_TEMP/btrfs.img" /mnt/btrfs
+          sudo chown -R "$(id -u):$(id -g)" /mnt/btrfs
+          mkdir -p /mnt/btrfs/snapshot-test
+          grep -w btrfs /proc/filesystems
+      - name: Verify, with the btrfs gate live
+        env:
+          SNAPSHOT_BTRFS_TEST_ROOT: /mnt/btrfs/snapshot-test
+        run: ./verify/verify.sh
+
+  # START.md section 10. It writes 5 GB, so it runs on a schedule and on
+  # demand, not on every pull request.
+  acceptance:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Make a btrfs filesystem
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y btrfs-progs
+          truncate -s 24G "$RUNNER_TEMP/btrfs.img"
+          mkfs.btrfs -q "$RUNNER_TEMP/btrfs.img"
+          sudo mkdir -p /mnt/btrfs
+          sudo mount -o loop,user_subvol_rm_allowed "$RUNNER_TEMP/btrfs.img" /mnt/btrfs
+          sudo chown -R "$(id -u):$(id -g)" /mnt/btrfs
+          mkdir -p /mnt/btrfs/snapshot-test
+      - name: Acceptance test
+        env:
+          SNAPSHOT_BTRFS_TEST_ROOT: /mnt/btrfs/snapshot-test
+        run: ./verify/acceptance.sh

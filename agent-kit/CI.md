@@ -9,7 +9,7 @@ step to the repo's stack; keep the verify step identical to local.
 name: CI
 on:
   push:
-    branches: [{{DEFAULT_BRANCH}}]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 concurrency:
@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       # toolchain setup for the stack goes here
       - name: Verify
-        run: {{VERIFY_CMD}}
+        run: ./verify/verify.sh
 ```
 
 ## `.github/workflows/nightly.yml` — catches rot between cycles
@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Verify
-        run: {{VERIFY_CMD}}
+        run: ./verify/verify.sh
       - name: File issue on failure
         if: failure()
         uses: actions/github-script@v7
@@ -77,7 +77,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build artifacts
-        run: {{BUILD_CMD}}    # adjust to produce dist/
+        run: go build ./...    # adjust to produce dist/
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -114,7 +114,7 @@ jobs:
 ```yaml
 version: 2
 updates:
-  - package-ecosystem: {{PKG_ECOSYSTEM}}
+  - package-ecosystem: gomod
     directory: "/"
     schedule: { interval: weekly }
     groups:
@@ -134,13 +134,13 @@ updates:
 <!-- Fixes #NN / ROADMAP.md item: <name> -->
 
 ## Checklist
-- [ ] `{{VERIFY_CMD}}` passes locally
+- [ ] `./verify/verify.sh` passes locally
 - [ ] Tests added/updated for behavior changes
 - [ ] STATUS/CHANGELOG/ROADMAP updated in this PR as applicable
 - [ ] No secrets, scaffolding, or leftover diagnostics
 ```
 
-## Branch protection on `{{DEFAULT_BRANCH}}` (repo Settings)
+## Branch protection on `main` (repo Settings)
 
 - Require the `verify` check; require PRs; require up-to-date branches;
   squash-merge only; auto-delete head branches.

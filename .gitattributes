@@ -1,0 +1,9 @@
+# Line endings are LF everywhere, including a Windows checkout.
+#
+# Git on Windows converts to CRLF by default. gofmt then reports every file
+# as unformatted and the gate dies at step 1, which is exactly what the first
+# verify-windows run did.
+* text=auto eol=lf
+
+# Shell scripts must stay LF or the shell refuses them.
+*.sh text eol=lf

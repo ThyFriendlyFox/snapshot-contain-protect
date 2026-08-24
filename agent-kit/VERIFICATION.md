@@ -1,11 +1,88 @@
 # VERIFICATION.md — one command answers "is this repo healthy"
 
-`{{VERIFY_CMD}}` runs, in order:
+`./verify/verify.sh` runs, in order:
 
-1. Lint / format check — `{{LINT_CMD}}`
-2. Build — `{{BUILD_CMD}}`
-3. Tests — `{{TEST_CMD}}`
-4. <repo-specific gates — one script per gate, each independently runnable>
+1. Format check — `gofmt -l cmd internal`
+2. Vet — `go vet ./...`, and every file in `.github/` must parse as YAML
+3. Build — `go build ./...`
+4. Tests — `go test ./...`
+5. The live Btrfs gate — `go test -tags btrfs_live ./internal/engine/ -run TestBtrfsLive -v`
+6. The live VSS gate — `go test -tags vss_live ./internal/engine/ -run TestVSSLive`
+7. The unprivileged gate — the engine and API suites, run again as user 65534
+
+CI runs the same command on 3 hosts: `ubuntu-latest`, `windows-latest`, and
+an `ubuntu-latest` with a loopback btrfs filesystem. A test that cannot hold
+on a platform skips with the reason the host gave, never silently.
+
+## The Btrfs gate
+
+Step 5 runs only when the host has the `btrfs` command. On any other host it
+prints "SKIPPED LOUDLY" and states that the Btrfs backend is unproven there.
+It never passes silently.
+
+Step 5 runs only when 3 things hold: the `btrfs` command exists, the kernel
+lists `btrfs` in `/proc/filesystems`, and `SNAPSHOT_BTRFS_TEST_ROOT` names a
+directory. It says which of the 3 is missing. The tooling alone is not
+enough: a host can hold `btrfs-progs` on a kernel that cannot mount btrfs.
+
+To run it, point it at a writable directory on a Btrfs filesystem:
+
+```sh
+export SNAPSHOT_BTRFS_TEST_ROOT=/mnt/btrfs/snapshot-test
+./verify/verify.sh
+```
+
+The `verify-btrfs` job in `.github/workflows/ci.yml` makes that filesystem on
+a loopback image, so every pull request proves the backend even though no
+development host here runs btrfs.
+
+## The acceptance test
+
+`verify/acceptance.sh` is START.md section 10, mechanised. It needs
+`SNAPSHOT_BTRFS_TEST_ROOT` and writes a 5 GB working set, so it is not part
+of the gate. It checks 5 claims and prints PASS or FAIL for each:
+
+1. A snapshot completes in under 1 second.
+2. A diff of 2 snapshots differing by 1 file returns in under 2 seconds.
+3. A restore returns the working set to its exact prior file state.
+4. The snapshot graph survives a daemon restart.
+5. 100 sequential snapshots consume less than 100 MB.
+
+The `acceptance` CI job runs it on every push to `main` and on demand, not on
+a pull request.
+
+The gate creates a subvolume, snapshots it, changes a file, restores it, and
+checks that the file came back. It removes what it made.
+
+## Why the gate parses the workflows
+
+A workflow that does not parse is invisible: GitHub silently declines to run
+it, so the check that would have caught the mistake never runs. Step 2 parses
+every file in `.github/`. It skips loudly when PyYAML is absent.
+
+This was added after a workflow whose step name ended in a colon was
+committed and pushed. YAML read the name as a key.
+
+## The VSS gate
+
+Step 6 runs only on Windows with `SNAPSHOT_VSS_TEST_ROOT` set, and it needs
+Administrator: a shadow copy is an elevated operation. It makes a real shadow
+copy, reads the pre-snapshot contents back through the mount, diffs 2
+snapshots, and deletes both. Anywhere else it skips loudly.
+
+The `verify-windows` CI job runs it. GitHub's Windows runners are elevated,
+which is the only reason it can run at all.
+
+## The unprivileged gate
+
+Step 6 exists because the daemon runs as a normal user and a working set can
+hold a read-only directory. As root every permission check passes, so a whole
+class of defect hides. The step compiles the engine and API suites, then runs
+them with `setpriv --reuid=65534`.
+
+It runs only when the suite runs as root and `setpriv` is present. As a normal
+user it states that steps 1 to 4 already covered the case. As root with no
+`setpriv` it skips loudly.
 
 ## Rules
 

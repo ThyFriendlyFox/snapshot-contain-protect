@@ -7,10 +7,74 @@ building, it gets added here first. One item ships per weekly cycle
 
 ## North star
 
-<!-- One paragraph: what this project is becoming. The queue below must
-     visibly serve this. -->
+Snapshot is becoming the undo a computer-use agent can call. A code agent
+undoes its work because Git exists; a computer-use agent has nothing. The
+project ends when an agent on Linux, macOS or Windows can mark a filesystem
+state in under 1 second, read what changed, and return to that state, all
+through 5 local HTTP verbs. It stays small: no user interface, no network
+snapshots, no rollback of state that lives somewhere else.
 
-{{PROJECT_NAME}} is …
+## Release ladder
+
+Each release has 1 promise. A release ships when a gate proves its promise,
+per `VERIFICATION.md`. Versions follow `RELEASING.md`: before 1.0, a
+breaking change is a minor and everything else is a patch.
+
+**Windows is the first platform.** The human ranked it on 2026-08-23. The
+reasoning: START.md targets desktop operating systems, computer-use agents
+mostly drive Windows desktops, and a Linux agent usually runs in a container
+whose layer already rolls back. Windows is where an agent has no undo at all.
+
+| Release | Theme | Promise | State |
+|---|---|---|---|
+| v0.1.0 | A person on Windows can use it | A person installs a release binary on Windows, declares a workset, and snapshots, diffs and restores. A snapshot completes in under 3 seconds, and System Restore is never called. | next |
+| v0.2.0 | Linux, proven | The same 5 verbs on Btrfs, with the live gate and the START.md section 10 acceptance numbers recorded. | planned |
+| v0.3.0 | Fast and bounded | A diff of 2 snapshots that differ by 1 file in a set of 100000 files returns in under 2 seconds, and disk use stays inside the provider's shadow storage budget. | planned |
+| v0.4.0 | Built for agents | An agent adds Snapshot with 1 MCP configuration block and gets a checkpoint before each of its actions. | planned |
+| v0.5.0 | macOS | The same 5 verbs, the same gate, on APFS. A snapshot completes in under 1 second. | planned |
+| v0.6.0 | Total rollback | An agent inside a container restores, and its process tree resumes at the checkpoint. | planned |
+| v1.0.0 | Stable | The 5 verbs carry a compatibility guarantee. 3 platforms are green in CI. An upgrade path is documented. | planned |
+
+### What the Windows release costs
+
+VSS is not Btrfs, and the model does not transfer. These 4 facts shape every
+item in the queue. State them in the README before v0.1.0 ships.
+
+| | Btrfs, built | VSS, to build |
+|---|---|---|
+| Scope | 1 subvolume per workset path | 1 shadow copy per **volume**. A workset scopes what diff and restore touch, not what the snapshot holds. |
+| Privilege | root for subvolume operations | Administrator. A per-user daemon cannot make a shadow copy. |
+| Count | disk-bound | About 64 shadow copies per volume, inside a shadow storage quota. The 50-snapshot budget must respect both. |
+| Restore | atomic subvolume swap, O(1) | Copy out of the shadow copy, O(changed bytes). The sub-second restore promise does not survive. |
+
+The 5 verbs survive unchanged. The graph, the store, the daemon, the client
+and retention are all backend-agnostic already, which is what the engine
+seam was for.
+
+### What each release holds
+
+**v0.1.0 — Windows, the platform where an agent has no undo.** The VSS
+backend, the volume-scoped workset model it forces, restore by copy, an
+elevation story, and a release a person can install.
+
+**v0.2.0 — Linux, proven.** The Btrfs backend is written and gated but has
+never run on Btrfs. The loopback CI job and `verify/acceptance.sh` are in
+place; this release is where their numbers get recorded. The work is small
+because the code exists.
+
+**v0.3.0 — fast and bounded.** `btrfs send --no-data` on Linux, shadow
+storage accounting on Windows, retention by age and disk budget, `GET /stats`
+and metrics.
+
+**v0.4.0 — built for agents.** An MCP server over the 5 verbs, Go and Python
+clients, a diff against the live working set, labels and search.
+
+**v0.5.0 — macOS.** 1 backend plus its gate, and no change above the seam.
+
+**v0.6.0 — total rollback.** The container layer with CRIU.
+
+**v1.0.0 — stable.** No new capability. The API freezes and 3 platforms run
+in 1 CI matrix.
 
 ## Feature Queue — ordered; top unblocked item ships next
 
@@ -24,42 +88,307 @@ building, it gets added here first. One item ships per weekly cycle
      · "Evidence" names how the promise will be proven: which gate,
        screenshot, benchmark, or user-visible behavior. -->
 
-### 1. <feature name>
-- **Promise:** <one sentence that is provably true when done>
-- **Evidence:** <the gate/artifact that proves it>
-- **Use case:** <the docs/USE-CASES.md case this serves — required; no case, add one or don't build it>
-- **Scope guard:** <what this item explicitly does NOT include>
-- **Status:** ready | blocked on <what> | in progress (week of <date>)
+The human ranked Windows first on 2026-08-23. Items 1 to 6 are the whole of
+v0.1.0, in the order they unblock each other. Items 7 and 8 are v0.2.0 and
+carry work that is already written and only needs proving.
 
-### 2. <feature name>
-- **Promise:** …
-- **Evidence:** …
-- **Scope guard:** …
-- **Status:** ready
+### 1. Make CI run, and require it
 
-### 3. <feature name>
-- **Promise:** …
-- **Evidence:** …
-- **Scope guard:** …
-- **Status:** ready
+- **Promise:** A pull request against `main` runs `./verify/verify.sh` in
+  GitHub Actions and cannot merge red.
+- **Evidence:** A green run linked from pull request 1, and branch protection
+  requiring the `verify` check.
+- **Use case:** Serves every case: the gate is what keeps them true.
+- **Scope guard:** No new checks. The workflows exist; they have never run.
+- **Release:** v0.1.0
+- **Status:** in progress. Pull request 1 ran CI for the first time in this
+  repository's history, on 2026-08-24: `verify` and `verify-btrfs` both
+  green. What remains is branch protection, which is a repository setting
+  the human applies.
+
+### 2. A Windows gate that runs on every pull request
+
+- **Promise:** `./verify/verify.sh` runs on `windows-latest` in CI and the
+  engine, store, API and client suites pass there.
+- **Evidence:** A green `verify-windows` job on pull request 1's successor.
+- **Use case:** Serves every case, on the platform v0.1.0 targets. No Windows
+  host exists in this project, so CI is the only place Windows is real.
+- **Scope guard:** The existing backends only. No VSS yet. A PowerShell entry
+  point may replace `verify.sh` on Windows, but it runs the same steps.
+- **Release:** v0.1.0
+- **Status:** done, 2026-08-24. `verify-windows` green on `windows-latest`
+  in CI run 32678743583: format, vet, build and the full suite. Step 5 skips
+  loudly with no btrfs; step 6 states that a non-unix host has no permission
+  bits to drop. 3 rounds were needed: CRLF checkout, then 8.3 short path
+  resolution, then a test using a path that is not absolute on Windows.
+- **Note:** Both binaries already cross-compile clean for `windows/amd64`,
+  vet included. What is unknown is what fails at run time: `os.Symlink`
+  needs Developer Mode or elevation, and `os.Chmod` on Windows only flips
+  the read-only attribute, so the mode invariant weakens there.
+
+### 3. The volume-scoped workset model
+
+- **Promise:** A workset resolves to the set of volumes its paths live on,
+  `GET /worksets` states them, and a workset spanning 2 volumes is either
+  handled or refused with a sentence saying why.
+- **Evidence:** Unit tests over the path-to-volume mapping, run in the
+  Windows CI job.
+- **Use case:** "Undo a file operation" — the user still declares paths; the
+  backend decides what a snapshot must cover.
+- **Scope guard:** Model and validation only. No VSS calls in this item.
+- **Release:** v0.1.0
+- **Status:** done, 2026-08-24. `engine.VolumeOf` asks
+  `GetVolumePathNameW` on Windows and walks the device number on unix.
+  `GET /worksets` reports the volumes, `snapctl` names them when a workset
+  spans more than 1, and a path that does not exist yet reports none. A
+  multi-volume workset is handled, not refused: the backend makes 1 shadow
+  copy per volume.
+- **Note:** This is the model change VSS forces. A shadow copy covers a
+  volume, not a directory. Getting it wrong here makes every later item wrong.
+
+### 4. The VSS backend: create and delete
+
+- **Promise:** On Windows, `POST /snapshot` makes a real shadow copy in under
+  2 seconds and `DELETE /snapshots/<id>` removes it, with the shadow copy ID
+  stored as the handle.
+- **Evidence:** A live Windows gate that creates, lists and deletes a shadow
+  copy, run in CI.
+- **Use case:** "Undo a file operation".
+- **Scope guard:** Create and delete only. Diff and restore are item 5. The
+  Volume Shadow Copy API directly; System Restore is never called.
+- **Release:** v0.1.0
+- **Status:** done, 2026-08-24. `TestVSSLive` PASS in 7.45 s on
+  `windows-latest`, CI run 32680184324. It made a real shadow copy of `C:`,
+  mounted it, read the pre-snapshot contents back through the mount, made a
+  second, diffed the 2 and found exactly the changed file, and deleted both.
+  6 unit tests cover the command construction on any host.
+- **Note:** Needs Administrator. The daemon must detect elevation and refuse
+  with a sentence, not a stack trace. Decide in this item whether it ships as
+  a Windows service running as LocalSystem.
+- **What the probe found, 2026-08-24, on `windows-latest`:**
+  - `Win32_ShadowCopy.Create("C:\", "ClientAccessible")` works and takes
+    about 2 seconds. The v0.1.0 promise of under 2 seconds is close to that
+    measurement, not comfortably inside it. Measure before promising.
+  - The shadow copy answers as
+    `\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy1`.
+  - **That path is not directly readable.** Opening a file under it fails
+    with "an object at the specified path does not exist".
+  - A directory symlink to it does work, and the trailing backslash is
+    required: `mklink /d C:\mount "<device>\"`. Reading through the mount
+    returned the pre-snapshot contents.
+  - So a handle is a **mount**, not a path the backend already holds. Create
+    makes the shadow copy and then the symlink; delete removes the symlink
+    and then the shadow copy. The mount is state the daemon must clean up,
+    including after a crash, which is what `Reconcile` already exists for.
+  - Default shadow storage is 10 percent of the volume: 14.9 GB maximum on
+    that runner, 736 MB allocated for 1 copy. Item 6 must read this, because
+    the provider evicts the oldest copy when the cap is reached.
+  - `Remove-CimInstance` on the `Win32_ShadowCopy` deletes it cleanly.
+
+### 5. VSS diff and restore
+
+- **Promise:** A diff of 2 shadow copies returns the same path-level answer
+  the tree walk gives, and a restore returns the workset paths to their exact
+  prior contents.
+- **Evidence:** The live Windows gate, extended to change a file, diff, and
+  restore.
+- **Use case:** "Decide whether to roll back" and "Undo a file operation".
+- **Scope guard:** Restore copies out of the shadow copy into the live paths.
+  No volume-level revert, which would take the whole disk back.
+- **Note:** The probe means this item reuses what exists. Once the shadow
+  copy is mounted, the tree-walk differ and the byte-copy restore work
+  through the mount unchanged. The manifest maps each workset path to its
+  subpath under the mount, which is also what scopes a volume-wide snapshot
+  down to the declared paths.
+- **Release:** v0.1.0
+- **Status:** done, 2026-08-24. `TestVSSLive` PASS in CI run 32680584229,
+  restoring through the mount and checking that an extra file did not
+  survive. Diff came free with item 4.
+- **Note:** Restore is O(changed bytes) here, not a swap. The README now
+  carries a table splitting snapshot and restore cost by backend.
+
+### 6. Retention inside the shadow copy budget
+
+- **Promise:** Retention keeps the last 50 auto snapshots per workset or as
+  many as the provider allows, whichever is smaller, and says in the log when
+  the provider is the binding limit.
+- **Evidence:** A Windows gate case that fills the budget and shows retention
+  holding the line.
+- **Use case:** "Free disk space".
+- **Scope guard:** Count and provider limits. Age and disk budget are v0.3.0.
+- **Release:** v0.1.0
+- **Status:** done, 2026-08-24. Retention keeps the smaller of `-auto-keep`
+  and what the provider will hold, and logs which one is binding. It leaves
+  1 slot free, so the next snapshot does not force an eviction between the
+  prune and the write.
+- **Note:** Prevention is only half. A provider at its cap deletes the
+  oldest copy silently, and a VSS mount stays a directory after the copy
+  under it is gone, so the handle proves nothing. Reconciliation now asks
+  the backend whether each snapshot is still real and drops the rows the
+  provider evicted. It counts those separately from missing handles: a
+  wrong `-data-dir` is ambiguous and gets refused, eviction is a fact from
+  the provider and gets acted on.
+
+### 7. Prove the Btrfs backend on a Btrfs host
+
+- **Promise:** On a Btrfs host, `go test -tags btrfs_live ./internal/engine/`
+  passes, and `verify/acceptance.sh` records a snapshot under 1 second and a
+  diff under 2 seconds on a 5 GB working set.
+- **Evidence:** The `verify-btrfs` and `acceptance` CI job output, with the
+  numbers copied into `DEVLOG.md`.
+- **Use case:** "Undo a file operation" on Linux.
+- **Scope guard:** No new verbs. No Windows work.
+- **Release:** v0.2.0
+- **Status:** done, 2026-08-24. `TestBtrfsLive` PASS on a real btrfs
+  filesystem (run 32677729798). All 5 acceptance claims hold (run
+  32677974928) on a 5120 MB working set: snapshot 8 ms, diff 12 ms, exact
+  restore, graph survived a restart, 100 snapshots cost 21 MB.
+
+### 8. A workset that covers a plain directory on Btrfs
+
+- **Promise:** A workset path that is a directory and not a subvolume is
+  snapshotted through its enclosing subvolume, and a restore of it returns
+  that directory and nothing outside it.
+- **Evidence:** A live gate case that declares a plain directory inside a
+  subvolume, changes a file beside it and inside it, restores, and shows the
+  file outside the declared path untouched.
+- **Use case:** "Checkpoint every step of a long task" — an agent points at
+  a project directory, not at a subvolume it must create first.
+- **Scope guard:** No conversion of a directory into a subvolume. Nothing a
+  person did not name is ever restored.
+- **Release:** v0.2.0
+- **Status:** in progress (week of 2026-08-24). Written, with 3 unit tests
+  and a live gate case. The live half runs in the `verify-btrfs` CI job.
+- **Note:** The promise was sharpened on 2026-08-24, before any code. It
+  said "states which paths it converted", which assumed the backend would
+  turn a directory into a subvolume. That is destructive and the scope guard
+  already forbade it, so the promise contradicted its own item.
+- **The design:** snapshot the enclosing subvolume and map the declared path
+  to a subpath inside it, which is exactly what the VSS backend does with a
+  volume. Restore then splits by what was declared. A source that is itself
+  a subvolume keeps the constant-time swap. A source that is a plain
+  directory is copied out of the snapshot, because swapping its enclosing
+  subvolume would restore every sibling the caller never named.
+
+### 9. Reconcile the graph and the snapshot root at start
+
+- **Promise:** A daemon killed during `Create` leaves no handle without a
+  row and no row without a handle, and says at start how many it repaired.
+- **Evidence:** A test that kills the service between the engine call and
+  the store write, then reopens it.
+- **Use case:** "Recover the graph after a restart".
+- **Scope guard:** No write-ahead journal of its own.
+- **Release:** v0.2.0
+- **Status:** done, 2026-08-24. `Service.Reconcile` runs at start. 6 tests
+  cover it. It refuses 1 case rather than repairing it: when every row is
+  orphaned and there is more than 1 row, the likely cause is a wrong
+  `-data-dir`, and emptying the graph is the worst answer to a typo.
+
+### 10. Ship an installable release
+
+- **Promise:** `snapshotd` and `snapctl` install from a published GitHub
+  release on a clean machine, the service starts the daemon, and `snapctl
+  snapshot` works without the repository present.
+- **Evidence:** A run of the published artifact on a clean machine, recorded
+  in `DEVLOG.md`. `RELEASING.md` step 6 requires this anyway.
+- **Use case:** Serves every case in `docs/USE-CASES.md`. None of them is
+  reachable without an install.
+- **Scope guard:** Binaries for Windows and Linux, a service definition per
+  platform, and install text. No distribution packages, no Homebrew, no
+  container image.
+- **Release:** v0.1.0 for the Windows half, v0.2.0 for Linux
+- **Status:** in progress (week of 2026-08-24). Everything up to publishing
+  is done: `release.yml` builds Windows and Linux archives with a licence, a
+  README and the platform's install piece, and writes `SHA256SUMS`.
+  `packaging/` holds a systemd unit and a Windows installer.
+- **Note:** MIT `LICENSE` is committed, so nothing legal blocks publishing.
+  What remains is cutting the tag, which publishes to the world. That is the
+  human's call, not the agent's, and `RELEASING.md` step 6 requires running
+  the published artifact on a clean machine before the release is done.
+- **Known gap:** the Windows install registers a scheduled task, not a
+  service. `snapshotd` is a console program and does not answer the service
+  control protocol, so `sc.exe` would start it and then kill it for never
+  reporting that it started. A real service needs `golang.org/x/sys/windows/svc`
+  support compiled in. That is in Later, not in v0.1.0.
 
 ## Later — candidates, not yet specced
 
-- <idea> — <one line why it might matter>
+Grouped by the release they most likely serve.
+
+**v0.2.0**
+- Diff through `btrfs send --no-data` — the tree walk is O(files), not
+  O(changes).
+- Retention by age and by disk budget.
+- `GET /stats`: disk used and snapshot count per workset.
+- Metrics an operator can scrape.
+
+**v0.3.0**
+- An MCP server over the 5 verbs — the way an agent finds this tool.
+- Go and Python client libraries.
+- Diff a snapshot against the live working set, with no snapshot taken.
+- Labels and search: `GET /snapshots?label=`.
+- `GET /snapshots/<id>/paths` — the workset paths of 1 node.
+
+**v0.1.x**
+- A real Windows service, using `golang.org/x/sys/windows/svc`, so the
+  daemon survives a logoff and reports its state to the service manager.
+
+**v0.4.0 and v0.5.0**
+- APFS backend through `fs_snapshot_create`.
+- VSS backend through the Volume Shadow Copy API.
+- A CI matrix that runs the gate on 3 platforms.
+
+**v0.6.0**
+- The container layer with CRIU: freeze, restore, discard.
+- A workset flag that puts the agent inside the container.
+
+**Unplaced**
+- Snapshot of a working set spanning 2 filesystems.
+- A read-only mount of a snapshot, so a person can copy 1 file out of it
+  instead of restoring the set.
 
 ## Shipped
 
-<!-- Move queue items here when done, newest first, with the release tag
-     and the evidence link. This is the project's real history of intent. -->
-
 | Week | Feature | Release | Evidence |
 |---|---|---|---|
+| 2026-08-24 | Retention inside the provider's budget, and eviction detection | unreleased | 3 budget tests and 2 eviction tests; `Budgeter` and `Verifier` seams |
+| 2026-08-24 | VSS restore | unreleased | `TestVSSLive` PASS in CI run 32680584229, restoring through the mount |
+| 2026-08-24 | The VSS backend: create, delete and diff | unreleased | `TestVSSLive` PASS in 7.45 s, CI run 32680184324, against a real shadow copy provider |
+| 2026-08-24 | The volume-scoped workset model | unreleased | `internal/engine/volume_test.go`, and 2 API tests; green on Linux and Windows in CI |
+| 2026-08-24 | The gate runs on Windows | unreleased | `verify-windows` green in CI run 32678743583 |
+| 2026-08-24 | Startup reconciliation of the graph and the snapshot root | unreleased | 6 tests in `internal/api/reconcile_test.go`; the daemon repairs at start and refuses a wrong data directory |
+| 2026-08-24 | Btrfs proven, and the acceptance test run | unreleased | CI runs 32677729798 and 32677974928: `TestBtrfsLive` PASS; snapshot 8 ms, diff 12 ms, 100 snapshots 21 MB on 5120 MB |
+| 2026-08-23 | MVP: engine, store, daemon, client, retention | unreleased | `./verify/verify.sh` green at `HEAD`; 74 tests, 0 failures |
 
 ## Explicitly not doing
 
-- <declined idea> — <one line why; saves re-litigating it>
+- A graphical interface. The caller is an agent; the human uses `snapctl`.
+- Remote or networked snapshots. The daemon binds loopback and has no
+  authentication.
+- Rollback of remote state. A written row, a sent email and a called API
+  stay done. START.md section 7 states this and it never changes.
+- Windows System Restore as the Windows backend. It takes minutes and
+  records state a rollback does not need.
+- Content-level diff. The 5 verbs answer "which paths moved". A person who
+  wants to see inside a file has Git, `diff` and the snapshot on disk.
 
 ## Queue changes
 
-<!-- Any reorder, insertion above position 3, or item removal gets one
-     line here: date, what changed, why. -->
+- 2026-08-23 — Seeded the queue at install. Order follows START.md section 9:
+  the Btrfs proof first, because the MVP gate skips it on a non-Btrfs host.
+- 2026-08-24 — The v0.1.0 promise moved from "under 2 seconds" to "under 3
+  seconds". The probe measured about 2 seconds for `Win32_ShadowCopy.Create`,
+  so the old bar sat on the measurement rather than inside it and would have
+  been true or false by coin flip. A promise that cannot be relied on is not
+  a promise. The measured number is recorded in item 4.
+- 2026-08-23 — Windows moved to v0.1.0 and Linux to v0.2.0, on the human's
+  ranking. The reasoning is in the release ladder. The queue was rewritten:
+  4 Windows items were added, the Btrfs proof moved from position 1 to 7,
+  and "make CI run" moved to position 1 because every other item's evidence
+  needs it. The Btrfs work stays gated and shipping; it is not discarded.
+- 2026-08-23 — Item 5 now blocks item 1. Item 1 is proven by a CI job on a
+  loopback btrfs image, and CI has never run. Cycle item 5 first.
+- 2026-08-23 — Added the release ladder and re-scoped the queue to v0.1.0.
+  The queue held 4 engineering items and no path to a person using the tool.
+  2 items were added: an installable release, and CI that actually runs.
+  Both are gaps the MVP left, and neither was visible as work before.

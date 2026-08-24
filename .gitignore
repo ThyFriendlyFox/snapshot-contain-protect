@@ -1,0 +1,14 @@
+# Build output
+/dist/
+/snapshotd
+/snapctl
+
+# Loop state — runtime only, never history (LOOP.md)
+.claude/ralph-loop.local.md
+.claude/*.local.md
+
+# Local runtime data
+*.db
+*.db-wal
+*.db-shm
+.DS_Store

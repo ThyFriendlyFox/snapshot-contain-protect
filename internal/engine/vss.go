@@ -1,0 +1,313 @@
+package engine
+
+import (
+	"context"
+	"fmt"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+)
+
+// VSS is the Windows backend. It makes a Volume Shadow Copy of every volume
+// the workset touches. It never calls System Restore, which takes minutes and
+// records registry state a rollback does not need.
+//
+// A shadow copy is not a path. It answers as a device such as
+// `\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy1`, and files cannot be read
+// through that device directly. A directory symlink to it can be read, and
+// the trailing separator is required. So a handle here is a mount: Create
+// makes the shadow copy and then the link, and Delete removes both.
+//
+// Every command goes through a Runner, so the command construction is tested
+// on any host. Only the live gate needs Windows.
+type VSS struct {
+	root string
+	run  Runner
+}
+
+// NewVSS returns a VSS backend that keeps its mounts under root.
+func NewVSS(root string) *VSS { return &VSS{root: root, run: execRunner} }
+
+func (v *VSS) Name() string { return "vss" }
+
+func (v *VSS) Available() error {
+	if runtime.GOOS != "windows" {
+		return fmt.Errorf("%w: the vss backend needs windows", ErrUnavailable)
+	}
+	if _, err := exec.LookPath("powershell"); err != nil {
+		return fmt.Errorf("%w: powershell not found", ErrUnavailable)
+	}
+	elevated, err := v.elevated(context.Background())
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	if !elevated {
+		// State the requirement, not a stack trace. A shadow copy is an
+		// administrator operation and no flag changes that.
+		return fmt.Errorf("%w: the vss backend needs Administrator; run the daemon elevated", ErrUnavailable)
+	}
+	return nil
+}
+
+// elevated reports whether this process can make a shadow copy at all.
+func (v *VSS) elevated(ctx context.Context) (bool, error) {
+	out, err := v.run(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command",
+		`([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)`)
+	if err != nil {
+		return false, err
+	}
+	return strings.EqualFold(strings.TrimSpace(string(out)), "true"), nil
+}
+
+func (v *VSS) Create(ctx context.Context, id string, sources []string) (string, error) {
+	if err := checkSources(v.root, sources); err != nil {
+		return "", err
+	}
+	volumes, err := VolumesOf(sources)
+	if err != nil {
+		return "", err
+	}
+
+	handle := filepath.Join(v.root, id)
+	if err := mkdirAll(handle); err != nil {
+		return "", err
+	}
+
+	m := manifest{}
+	for i, volume := range volumes {
+		shadowID, device, err := v.createShadow(ctx, volume)
+		if err != nil {
+			v.cleanup(ctx, handle, m)
+			return "", err
+		}
+		mount := filepath.Join(handle, volumeDir(i))
+		if err := v.mount(ctx, device, mount); err != nil {
+			// The shadow copy exists but has no mount. Record it so cleanup
+			// can still find and delete it.
+			m.Shadows = append(m.Shadows, shadow{ID: shadowID, Volume: volume, Dir: volumeDir(i)})
+			v.cleanup(ctx, handle, m)
+			return "", err
+		}
+		m.Shadows = append(m.Shadows, shadow{ID: shadowID, Volume: volume, Dir: volumeDir(i)})
+	}
+
+	// Each source becomes a subpath inside its volume's mount, so the shared
+	// differ and the byte-copy restore walk it the way they walk any handle.
+	for _, src := range sources {
+		dir, err := mountedSubpath(m, src)
+		if err != nil {
+			v.cleanup(ctx, handle, m)
+			return "", err
+		}
+		m.Sources = append(m.Sources, source{Path: src, Dir: dir})
+	}
+
+	if err := writeManifest(handle, m); err != nil {
+		v.cleanup(ctx, handle, m)
+		return "", err
+	}
+	return handle, nil
+}
+
+// createShadow makes 1 shadow copy and returns its identifier and device.
+func (v *VSS) createShadow(ctx context.Context, volume string) (id, device string, err error) {
+	script := fmt.Sprintf(
+		`$r = ([WMICLASS]'root\cimv2:Win32_ShadowCopy').Create('%s','ClientAccessible'); `+
+			`if ($r.ReturnValue -ne 0) { Write-Error ('Win32_ShadowCopy.Create returned ' + $r.ReturnValue); exit 1 }; `+
+			`$s = Get-CimInstance Win32_ShadowCopy | Where-Object { $_.ID -eq $r.ShadowID }; `+
+			`Write-Output ($s.ID + '|' + $s.DeviceObject)`,
+		psQuote(volume))
+	out, err := v.run(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	if err != nil {
+		return "", "", fmt.Errorf("shadow copy of %s: %w", volume, err)
+	}
+	id, device, ok := strings.Cut(lastLine(string(out)), "|")
+	if !ok || id == "" || device == "" {
+		return "", "", fmt.Errorf("shadow copy of %s: cannot read the identifier and device from %q", volume, out)
+	}
+	return id, device, nil
+}
+
+// mount links the shadow copy device into the handle. The trailing separator
+// is required: mklink refuses the device path without it.
+func (v *VSS) mount(ctx context.Context, device, mount string) error {
+	_, err := v.run(ctx, "cmd", "/c", "mklink", "/d", mount, device+`\`)
+	if err != nil {
+		return fmt.Errorf("mount %s at %s: %w", device, mount, err)
+	}
+	return nil
+}
+
+func (v *VSS) Delete(ctx context.Context, handle string) error {
+	m, err := readManifest(handle)
+	if err != nil {
+		// A handle with no manifest names no shadow copy. Remove what is
+		// there and report nothing, so a prune can finish.
+		return removeTree(handle)
+	}
+	v.cleanup(ctx, handle, m)
+	return nil
+}
+
+// cleanup removes every mount and then every shadow copy the manifest names,
+// then the handle itself. It reports nothing: each caller already has the
+// error that brought it here.
+func (v *VSS) cleanup(ctx context.Context, handle string, m manifest) {
+	for _, s := range m.Shadows {
+		mount := filepath.Join(handle, s.Dir)
+		// rmdir removes the link, never what it points at. RemoveAll on a
+		// directory symlink would walk into the shadow copy.
+		_, _ = v.run(ctx, "cmd", "/c", "rmdir", mount)
+	}
+	for _, s := range m.Shadows {
+		script := fmt.Sprintf(
+			`Get-CimInstance Win32_ShadowCopy | Where-Object { $_.ID -eq '%s' } | Remove-CimInstance`,
+			psQuote(s.ID))
+		_, _ = v.run(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	}
+	_ = removeTree(handle)
+}
+
+func (v *VSS) Diff(ctx context.Context, from, to string) (Change, error) {
+	// The mounts make a shadow copy look like any other tree.
+	return diffHandles(ctx, from, to)
+}
+
+// Restore copies out of the mounted shadow copy into the live paths. There is
+// no volume-level revert: that would take the whole disk back, including
+// every file no workset declared.
+//
+// The cost differs from Btrfs and it is worth stating. Btrfs swaps a
+// subvolume, which is constant time. This copies the bytes that changed, so
+// a restore is proportional to the size of the working set.
+func (v *VSS) Restore(ctx context.Context, handle string) error {
+	return restoreTrees(ctx, handle)
+}
+
+// Budget reports how many shadow copies the provider will still hold on the
+// volumes these paths live on. It reads the shadow storage the provider has
+// allocated, because the cap is a size and the eviction it causes is silent.
+func (v *VSS) Budget(ctx context.Context, sources []string) (int, bool, error) {
+	volumes, err := VolumesOf(sources)
+	if err != nil {
+		return 0, false, err
+	}
+	smallest := -1
+	for _, volume := range volumes {
+		max, used, count, err := v.shadowStorage(ctx, volume)
+		if err != nil {
+			return 0, false, err
+		}
+		if max <= 0 || count <= 0 || used <= 0 {
+			// Nothing to divide by yet. The first snapshots on a volume run
+			// against the count budget alone.
+			continue
+		}
+		// The average copy so far is the only estimate available. A provider
+		// reports sizes, not a number of copies it will keep.
+		average := used / count
+		if average <= 0 {
+			continue
+		}
+		fits := int(max / average)
+		if smallest < 0 || fits < smallest {
+			smallest = fits
+		}
+	}
+	if smallest < 0 {
+		return 0, false, nil
+	}
+	return smallest, true, nil
+}
+
+// shadowStorage reads the provider's cap, its current use, and how many
+// copies that use covers.
+func (v *VSS) shadowStorage(ctx context.Context, volume string) (max, used, count int64, err error) {
+	script := `$v = Get-CimInstance Win32_ShadowStorage | Select-Object -First 1; ` +
+		`$n = (Get-CimInstance Win32_ShadowCopy | Measure-Object).Count; ` +
+		`Write-Output ("" + $v.MaxSpace + "|" + $v.UsedSpace + "|" + $n)`
+	out, err := v.run(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("shadow storage of %s: %w", volume, err)
+	}
+	fields := strings.Split(lastLine(string(out)), "|")
+	if len(fields) != 3 {
+		return 0, 0, 0, fmt.Errorf("shadow storage of %s: cannot read %q", volume, out)
+	}
+	max = parseInt64(fields[0])
+	used = parseInt64(fields[1])
+	count = parseInt64(fields[2])
+	return max, used, count, nil
+}
+
+// Exists reports whether the provider still holds every shadow copy this
+// handle names. A mount stays a directory after the copy under it is gone, so
+// the directory proves nothing.
+func (v *VSS) Exists(ctx context.Context, handle string) (bool, error) {
+	m, err := readManifest(handle)
+	if err != nil {
+		return false, nil
+	}
+	if len(m.Shadows) == 0 {
+		return false, nil
+	}
+	out, err := v.run(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command",
+		`Get-CimInstance Win32_ShadowCopy | ForEach-Object { $_.ID }`)
+	if err != nil {
+		return false, err
+	}
+	live := map[string]bool{}
+	for _, line := range strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n") {
+		if id := strings.TrimSpace(line); id != "" {
+			live[strings.ToUpper(id)] = true
+		}
+	}
+	for _, s := range m.Shadows {
+		if !live[strings.ToUpper(s.ID)] {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func parseInt64(s string) int64 {
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// mountedSubpath maps a source path to its place inside the handle.
+func mountedSubpath(m manifest, src string) (string, error) {
+	for _, s := range m.Shadows {
+		rel, err := filepath.Rel(s.Volume, src)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
+		if rel == "." {
+			return s.Dir, nil
+		}
+		return filepath.Join(s.Dir, rel), nil
+	}
+	return "", fmt.Errorf("%w: no shadow copy covers %q", ErrBadSource, src)
+}
+
+func volumeDir(i int) string { return fmt.Sprintf("vol%d", i) }
+
+// psQuote makes a value safe inside a single-quoted PowerShell string.
+func psQuote(s string) string { return strings.ReplaceAll(s, "'", "''") }
+
+// lastLine returns the final non-empty line, so a banner before the answer
+// does not become the answer.
+func lastLine(s string) string {
+	lines := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" {
+			return line
+		}
+	}
+	return ""
+}

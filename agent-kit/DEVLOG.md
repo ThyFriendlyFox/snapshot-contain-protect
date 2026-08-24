@@ -40,3 +40,342 @@ Evidence: <commit / tag / gate run / screenshot>
 ---
 
 <!-- Entries below, newest first. -->
+
+## 2026-08-24 — v0.1.0 is feature-complete, and retention learned to distrust itself
+
+Items 5 and 6 landed, which finishes the Windows feature work.
+
+Restore needed no VSS code at all. Once a snapshot is a readable tree,
+putting it back is the same work the copy backend already did, so both call
+`restoreTrees` now. VSS restore inherited 3 review rounds of hardening it
+never had to earn: byte copies instead of links, a refusal when the
+destination has become a symlink, and staging beside the destination so a
+failure leaves the working set untouched.
+
+Item 6 was 2 problems wearing 1 hat. The stated one is the budget: a Volume
+Shadow Copy Service at its storage cap does not refuse the next snapshot, it
+deletes the oldest. So retention now keeps the smaller of `-auto-keep` and
+what the provider will hold, leaves 1 slot free, and logs which limit is
+binding.
+
+The unstated one is worse. Prevention can fail, and when it does the mount
+stays a directory after the copy under it is gone. The handle proves
+nothing. So reconciliation asks the backend whether each snapshot is still
+real, and drops the rows the provider evicted.
+
+That collided with a safety valve I built earlier. Reconciliation refuses to
+empty the graph when every row is missing, because a typo in `-data-dir`
+looks exactly like total data loss. Eviction tripped it. The 2 conditions
+are not the same and I had conflated them: a missing handle is ambiguous and
+deserves the refusal, while eviction is a fact reported by the provider with
+the handle still sitting there. The refusal now counts only the missing
+handles.
+
+Evidence: `./verify/verify.sh` green, 101 tests, 0 failures, clean under
+`-race`. CI run 32680584229 for the restore half.
+
+## 2026-08-24 — Snapshot took its first real snapshot on Windows
+
+`TestVSSLive` passed in 7.45 seconds on a Windows runner. The backend made
+a real Volume Shadow Copy of `C:`, mounted it, read back what a file said
+before the snapshot, made a second copy, diffed the 2 and found exactly the
+1 changed file, then deleted both. That is the v0.1.0 platform doing the
+thing the project exists to do.
+
+It worked on the first attempt, and the reason is the probe. I had assumed
+the shadow copy device path was a handle the backend could read files from.
+It is not, and every one of items 4, 5 and 6 was built on that assumption.
+Finding out from a 10-step probe cost 1 run. Finding out from a written
+backend would have cost several rounds with the wrong interface already in
+place.
+
+The design the probe forced: a handle is a mount. Create makes 1 shadow copy
+per volume and links each into the handle; delete removes the links with
+rmdir, then the copies. Each source path maps to a subpath inside its
+volume's mount, and that single decision is what let the existing differ
+walk a volume-wide snapshot as if it were a subtree. Diff needed no new
+code at all.
+
+Restore is item 5 and refuses until it exists. The gate now has 7 steps, and
+2 of them run only where the filesystem they test is real: btrfs on a
+loopback image, VSS on an elevated Windows runner. Everywhere else they skip
+and say so.
+
+Evidence: CI run 32680184324, all 4 jobs green. 94 tests.
+
+## 2026-08-24 — I probed VSS before building it, and the probe changed the design
+
+Item 4 is the VSS backend. No machine in this project runs Windows, so the
+choice was to write it against assumptions and learn through CI rounds, or
+to ask Windows first. I asked. The probe is a workflow that creates a shadow
+copy on a runner and reports what happened.
+
+It found the thing I would have got wrong. A shadow copy answers as a device
+path like `\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy1`, and I had
+assumed the backend could read files under it and treat it as a handle. It
+cannot. Opening a file under that path fails with "an object at the
+specified path does not exist". A directory symlink to it does work, and the
+trailing backslash is required.
+
+So a VSS handle is a mount, not a path. Create makes the shadow copy and
+then the symlink; delete removes both. That is state the daemon must clean
+up after a crash, which is work that already exists: `Reconcile` runs at
+start and removes what no row names.
+
+The rest of the answers: creation takes about 2 seconds, which sits on the
+v0.1.0 promise rather than inside it. Default shadow storage is 10 percent
+of the volume, 14.9 GB on that runner. Deletion is clean. The runner is
+elevated, which is the only reason any of this ran.
+
+The good news is what the mount buys. Once mounted, the tree-walk differ and
+the byte-copy restore work through it unchanged, and the manifest that maps
+workset paths to subpaths is what scopes a volume-wide snapshot down to the
+declared directories.
+
+I also shipped a broken workflow on the way here. The probe's step name
+ended in a colon, YAML read it as a key, and GitHub declines to run a file
+that does not parse without saying so. Worse, I had run the validation and
+the commit as separate commands, so the check printed the error and the push
+went out anyway. Gate step 2 now parses every file in `.github/`.
+
+Evidence: probe run 32679712431, all 10 steps green.
+
+## 2026-08-24 — The gate runs on Windows, after 3 rounds of being wrong
+
+Windows is the v0.1.0 platform and no machine in this project runs it, so
+the CI job is the only place Windows is real. It took 3 rounds to go green,
+and each failure was worth having.
+
+Round 1 died at step 1. Git on Windows checks out CRLF, gofmt reads a CRLF
+file as unformatted, and all 26 files were listed. A `.gitattributes`
+pinning LF fixes it.
+
+Round 2 reached the tests and failed 3. Two compared a diff answer against
+the path they had declared: the daemon stores the resolved path, and a
+Windows temp directory arrives as the 8.3 short name `RUNNER~1` and resolves
+to `runneradmin`. That is the same rule that resolves a symlink on unix, so
+the tests were wrong and the product was right. The third used `/x`, which
+is not an absolute path on Windows: `filepath.Rel` could not relate it to a
+drive-rooted path, the nesting guard reported nothing, and the test read
+that silence as a pass waiting to happen. A guard that cannot compare 2
+paths and a guard that finds no nesting look identical from outside. Running
+on a second platform is what exposed it.
+
+Round 3 is green: format, vet, build and the whole suite on `windows-latest`.
+Step 5 skips loudly because there is no btrfs there. Step 6 says a non-unix
+host has no permission bits to drop.
+
+Nothing about VSS is built yet. What this proves is that the daemon, the
+store, the client and the copy backend run on Windows, which is the harness
+every VSS item depends on.
+
+Evidence: CI run 32678743583, all 3 jobs green. 80 tests.
+
+## 2026-08-24 — The acceptance test ran, and every claim in the spec holds
+
+START.md section 10 has been the open question since day 1. Today it has
+numbers. On a 5120 MB working set on btrfs, in CI run 32677974928:
+
+- A snapshot took 8 ms. The spec allows 1000 ms.
+- A diff of 2 snapshots differing by 1 file took 12 ms, and named exactly
+  that 1 file. The spec allows 2000 ms.
+- A restore returned the working set to its exact prior state. The test
+  compares an md5 of every file before and after.
+- The graph survived a daemon restart with all 4 nodes.
+- 100 sequential snapshots cost 21 MB. The spec allows 100 MB.
+
+The first run of that test reported 6 MB for the 100 snapshots, and I did
+not publish it. GNU cp on btrfs defaults to `--reflink=auto`, so the 512
+copies that build the working set may have shared extents: the set would
+measure 5 GB and hold almost no distinct data, and the number would be a
+lie by construction. With `--reflink=never` the figure more than tripled,
+to 21 MB. The suspicion was worth the rerun.
+
+I also put the gate on Windows for the first time, and it failed on the
+first step. Git on Windows checks out CRLF, gofmt reads a CRLF file as
+unformatted, and all 26 files were listed. A `.gitattributes` pinning LF
+fixes it. The Windows suites now skip loudly where Windows cannot hold a
+unix guarantee: creating a symlink needs Developer Mode or elevation, and
+`os.Chmod` there only toggles the read-only attribute, so modes and ACLs do
+not survive a restore. Both are written down as limits rather than hidden.
+
+Evidence: CI runs 32677729798 and 32677974928. `./verify/verify.sh` green
+locally, 74 tests, 0 failures.
+
+## 2026-08-24 — CI ran for the first time, and btrfs is real
+
+Two things happened today that the project had been asserting rather than
+knowing.
+
+The human chose MIT, so `LICENSE` exists and nothing legal blocks a release.
+
+Then I tried to prove the btrfs backend on this machine. I installed
+btrfs-progs, made a 3 GB image, ran mkfs.btrfs, and the mount failed:
+this kernel has no btrfs support and no module tree. The backend cannot be
+proven here by any effort. Installing the tooling did find a real defect
+though. The gate decided whether to run the live btrfs test by asking
+whether the `btrfs` command exists, so a host with the tooling and no kernel
+support ran the test and failed. The gate now needs 3 things — the command,
+`btrfs` in `/proc/filesystems`, and a test root — and names whichever is
+missing.
+
+So I mechanised the proof instead of performing it. `verify/acceptance.sh`
+is START.md section 10 as a script: it builds a 5 GB working set, then
+checks 5 claims and prints PASS or FAIL for each. Two CI jobs make a
+loopback btrfs image, one running the gate on every pull request and one
+running the acceptance test on demand.
+
+Then I opened pull request 1 and CI ran for the first time in this
+repository's history. Both jobs passed, and the line that matters is
+`--- PASS: TestBtrfsLive`. The backend created a subvolume, snapshotted it,
+changed a file, restored, and the file came back. Until today that backend
+was an argument. Now it is a fact, on a loopback image in CI, though still
+not on a physical btrfs machine.
+
+The human also ranked Windows first. The reasoning holds: agents drive
+Windows desktops, and a Linux agent usually runs in a container whose layer
+already rolls back. Windows is where an agent has no undo at all. I flagged
+what VSS costs — a shadow copy covers a volume rather than a directory, it
+needs Administrator, it caps near 64 copies, and a restore is a copy rather
+than a swap, so the sub-second restore promise does not survive. The human
+chose it with those on the table. The roadmap now runs Windows at v0.1.0
+and Linux at v0.2.0, and the queue holds 4 new Windows items.
+
+Evidence: CI run 32677729798, both jobs green. `./verify/verify.sh` green
+locally. 74 tests, 0 failures.
+
+## 2026-08-23 — The third review round came back clean
+
+I sent the round-2 fixes back for a third pass. All 8 original findings and
+all 3 of my own regressions are closed, verified by running the suites as a
+normal user. The reviewer also checked the 4 things I was most suspicious of
+in my own work — the recursive path resolver, the safety-snapshot subset, the
+embedded-struct JSON, and whether the new gate step could pass while hiding a
+failure — and found all 4 sound. It confirmed the gate is honest by reverting
+1 fix and watching step 6 fail while step 4 stayed green.
+
+One residual came back: a restore could land on disk correctly and still
+return 400. The node that records a restore was written over every declared
+path, while the safety snapshot and the restore itself tolerate a subset. So
+a workset that had gained a path the target snapshot predates produced a
+correct rollback, a 400, and no node in the graph. No data was lost, but an
+agent reading 400 as "nothing happened" would act on a wrong premise. The
+node now covers the readable paths, the same rule the safety snapshot uses.
+
+3 rounds, 12 defects, 10 of them in code I wrote after the first review. The
+lesson I take: a fix deserves the same suspicion as the code it replaces.
+
+Evidence: `./verify/verify.sh` green. 74 tests, 0 failures, clean under
+`-race`. The new test returns the reviewer's exact 400 when the fix is
+reverted.
+
+## 2026-08-23 — The second review round: my fixes had introduced 3 defects
+
+I sent the 8 fixes back to the reviewer and asked 2 questions: is each
+finding closed, and did any fix break something new. 6 were closed. 1 was
+half closed. And 3 of my fixes had introduced new defects, 2 of them worse
+than the problem they replaced.
+
+The pattern is worth naming. My fix for the read-only directory made
+snapshots of such a directory work by reproducing its mode faithfully. That
+was right. But nothing made the copy writable again for deletion, and a
+normal user cannot unlink a child of a read-only directory. So the handle
+could never be deleted, the prune returned 500, retention stopped for that
+workset, and because one failure aborted the whole pass, it stopped for
+every workset after it too. Disk was never reclaimed again. The original
+defect at least failed loudly at snapshot time. Mine failed quietly, forever.
+
+The second: the restore's final cleanup hit the same read-only directory,
+but it runs after both renames. So the restore had already landed, and the
+service reported 500 anyway, wrote no node to the graph, and left a tree
+behind that made every later restore of that path fail on "file exists".
+
+The third was mine by choice, not by accident. I had made the safety
+snapshot warn instead of block. The reviewer pointed out that the check
+fails the whole workset for any 1 bad path, so a workset of 5 paths with 1
+deleted path skipped the safety snapshot for all 5 and silently discarded
+the work in the other 4. The caller got a 201 and a server log line it never
+sees. The safety snapshot now covers the paths it can, and the restore
+response carries `safety_snapshot` and `safety_warning`.
+
+I also learned why the first round of read-only tests passed: this container
+runs as root, and root ignores permission bits. The gate now has a sixth
+step that recompiles the engine and API suites and runs them as user 65534.
+I proved it works by reverting 1 fix and watching the unprivileged run fail
+while the root run stayed green.
+
+Evidence: `./verify/verify.sh` green, including the new step 6. 73 tests, 0
+failures, clean under `-race`.
+
+## 2026-08-23 — A review found 8 defects in the MVP, 2 of them data loss
+
+I asked a second agent to attack the code I had just written. It found 8
+defects and proved 7 of them by running them. I fixed all 8 the same day,
+before the branch went anywhere.
+
+Two would have lost a user's files. If a person pointed a workset at a
+symlinked directory, which is a common layout, the snapshot stored nothing:
+a tree walk does not descend through a symlinked root, and `os.Stat` follows
+the link so the check passed. Every checkpoint was empty, every diff said
+nothing changed, and the agent believed it was protected. A restore then
+replaced the symlink with an empty directory. The workset now resolves the
+link when it is declared, and the engine refuses a symlinked path outright.
+
+The second one is worse in a quiet way: a restore failed when a declared
+path had been deleted. That is the exact case a rollback exists for. The
+service took its safety snapshot first, the snapshot could not read a path
+that was gone, and the whole restore stopped with a 500. The safety snapshot
+now warns and the restore runs.
+
+The rest: a workset that contained the data directory made a snapshot walk
+into the handle it was writing; a restore applied the daemon's umask and
+dropped setuid, setgid and sticky bits, against the spec's promise of the
+exact prior file state; a read-only directory in the working set failed the
+whole snapshot; prune and retention deleted the graph row before the
+snapshot on disk, so a failed delete stranded data no row could reach; a
+missing workset path returned 500 instead of 400; and on Btrfs a staged
+subvolume left by an interrupted restore was cleaned up with `rmdir`, which
+cannot remove a subvolume, so every later restore of that path failed.
+
+Each fix landed with a test. I ran the 5 new service tests against the old
+code first and watched all 5 fail, so I know they test the defect and not my
+memory of it.
+
+Evidence: `./verify/verify.sh` green. 63 tests, 0 failures, clean under
+`-race`.
+
+## 2026-08-23 — Installed the agent kit and built the Snapshot MVP
+
+I started with an empty repository: a spec in `START.md` and this kit. The
+spec asks for a Git-style undo for computer-use agents. A code agent can undo
+its work because Git exists. An agent that moves files on a desktop cannot.
+The filesystem already has the primitive; nobody exposed it in a usable shape.
+
+I built the 5 steps the spec's build order names. The engine wraps the
+filesystem snapshot behind one interface with 4 operations. The store keeps
+the snapshot graph in 1 SQLite file. The daemon serves 5 verbs on loopback.
+`snapctl` speaks the same API an agent speaks. Retention keeps the last 50
+automatic snapshots per workset.
+
+The host got in the way in a useful manner. The spec targets Btrfs; this
+machine runs ext4 and has no `btrfs` command. So I wrote a second backend
+that hardlinks the working set. It runs anywhere, which means every gate runs
+anywhere, and 100 snapshots of 200 files still use under 100 MB. It is not
+copy-on-write, and I wrote that limit into the README rather than hide it.
+The Btrfs backend is written and unit-tested through a command seam, but no
+Btrfs host has run it. The gate says so out loud instead of passing.
+
+One defect found me, and a test caught it. The retention loop reparented a
+node onto a row that an earlier pass had already deleted, and SQLite refused
+with a foreign key error. The loop now re-reads each node before it moves the
+children. The test that found it prunes 3 nodes at once; the tests written
+before it only ever pruned 1, so they all passed.
+
+The queue holds 4 ready items. The first is the one this machine could not
+do: prove the Btrfs backend on a Btrfs host and run the acceptance test from
+the spec's section 10.
+
+Evidence: `./verify/verify.sh` green at `HEAD`. 53 tests, 0 failures. A
+manual run against the binary snapshotted a working set in 1 ms, diffed 1
+added, 1 modified and 1 deleted path, and restored the set.
+

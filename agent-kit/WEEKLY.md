@@ -15,8 +15,8 @@ lives in the kit files. Do not fatten the prompt.
 
 ## The cycle
 
-**0. Preflight.** Fetch; branch from latest `{{DEFAULT_BRANCH}}` as
-`feat/<slug>`. Run `{{VERIFY_CMD}}` — the baseline must be green before
+**0. Preflight.** Fetch; branch from latest `main` as
+`feat/<slug>`. Run `./verify/verify.sh` — the baseline must be green before
 feature work starts. A red baseline is this week's feature: fix it,
 ship the fix as the weekly update, and record that in ROADMAP.md.
 
@@ -29,7 +29,7 @@ prove it and what is out of scope. Mark the item `in progress (week of
 <date>)`.
 
 **3. Build.** Create the loop file per `LOOP.md` and run it:
-implement → `{{VERIFY_CMD}}` → commit at each
+implement → `./verify/verify.sh` → commit at each
 boundary with evidence in the message. Scope is the item's promise —
 defects found en route get fixed if they block the promise, otherwise
 queued in ROADMAP.md "Later". No side quests.
@@ -48,8 +48,8 @@ or link it in the PR/commit).
   entry too.
 - Any README/docs the behavior touched. Docs move with behavior:
   new config option → its row in `docs/CONFIGURATION.md`; moved
-  boundary → `docs/ARCHITECTURE.md`; new/changed adapter →
-  `docs/ADAPTERS.md`; new capability → its case in `docs/USE-CASES.md`.
+  boundary → `docs/ARCHITECTURE.md`; new/changed backend →
+  `docs/BACKENDS.md`; new capability → its case in `docs/USE-CASES.md`.
   All user-facing words obey `docs/STYLE.md`.
 
 **6. Ship.** Push the branch; open a PR per `CONTRIBUTING.md` (or merge

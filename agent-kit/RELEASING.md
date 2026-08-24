@@ -4,7 +4,7 @@ The weekly cycle (WEEKLY.md step 7) ends here. Weekly update = **minor**
 by default; **major** if breaking; out-of-band fixes = patch.
 (Pre-1.0: breaking → minor, everything else → patch.)
 
-1. `{{DEFAULT_BRANCH}}` green: `{{VERIFY_CMD}}`.
+1. `main` green: `./verify/verify.sh`.
 2. CHANGELOG.md: Unreleased → `## [X.Y.Z] - YYYY-MM-DD`.
 3. Bump the version where the stack keeps it (manifest/plist/gradle/…).
 4. Commit `chore: release vX.Y.Z`; tag `vX.Y.Z`; push branch + tag.

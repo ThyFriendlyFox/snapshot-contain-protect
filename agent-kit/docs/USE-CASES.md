@@ -1,29 +1,65 @@
 # Use cases
 
-<!-- The user-facing answer to "what do I do with this?". Each case has
-     the same shape — pick the verbs that fit the product and keep them
-     identical across every case. For a tool the shape might be
-     Record/Play/Undo; for a library, Setup/Call/Result; for a service,
-     Trigger/Action/Outcome. Cases are written in the repo's STYLE.md
-     voice: short sentences, active voice, no marketing words.
+Each case has the same shape. **Mark** is the checkpoint the agent takes.
+**Act** is the work that follows. **Undo** is what the agent does when the
+work goes wrong.
 
-     This file is load-bearing for the roadmap: every Feature Queue item
-     in ROADMAP.md should trace to a use case here (or add one). A
-     feature that serves no use case is a side quest. -->
+## Undo a file operation
 
-Each case has the same shape.
-<one sentence stating the shared shape and what each part means>
+**Mark.** The agent calls `POST /snapshot` before it deletes, moves or
+rewrites files. The call returns in under 1 second.
+**Act.** The agent runs the operation.
+**Undo.** The agent calls `POST /restore` with the snapshot identifier and
+`confirm: true`. The working set returns to its prior state.
 
-## <Use case name>
+## Decide whether to roll back
 
-**<Verb 1>.** <What the user does, step by step, present tense.>
-**<Verb 2>.** <What repeats / what the payoff is.>
+**Mark.** The agent snapshots before the action.
+**Act.** The agent runs the action, then snapshots again.
+**Undo.** The agent calls `GET /diff` between the two snapshots. It reads the
+added, modified and deleted paths, then decides. A diff costs less than a
+rollback.
 
-## <Use case name>
+## Checkpoint every step of a long task
 
-**<Verb 1>.** …
-**<Verb 2>.** …
+**Mark.** The agent snapshots before each step with `auto: true`.
+**Act.** The agent runs the step.
+**Undo.** The agent lists the graph, finds the last good node, and restores
+it. Retention keeps the last 50 auto checkpoints, so a long task does not
+fill the disk.
 
-<!-- 5–10 cases. Order from most common to most advanced. End with the
-     collaboration/scale case if there is one (shared config, team
-     library, multi-user), the way a reader ends a demo. -->
+## Keep a known-good state by hand
+
+**Mark.** A person runs `snapctl snapshot proj-a "before the migration"`. A
+labelled snapshot has `auto: false`.
+**Act.** The agent works for hours.
+**Undo.** Retention never removes the labelled snapshot, and never removes
+the snapshots it descends from. The known-good state stays reachable.
+
+## Branch instead of losing work
+
+**Mark.** The agent restores an older node.
+**Act.** The restore appends a new node under the restored one. The work that
+followed the original node stays in the graph as a sibling branch.
+**Undo.** The agent restores a node on either branch. Nothing was deleted.
+
+## Recover from a wrong rollback
+
+**Mark.** The service takes a safety snapshot before it restores.
+**Act.** The agent restores the wrong node.
+**Undo.** The agent restores the safety snapshot, labelled "before restore of
+&lt;id&gt;", and is back where it started.
+
+## Free disk space
+
+**Mark.** The graph holds snapshots a person no longer needs.
+**Act.** The person runs `snapctl prune <id>`, or `--cascade` for a subtree.
+**Undo.** None. A prune is the one operation that removes history, which is
+why it refuses a node with children until the caller asks for the subtree.
+
+## Recover the graph after a restart
+
+**Mark.** The agent works while the daemon runs.
+**Act.** The daemon stops, by a crash or a restart.
+**Undo.** The daemon reads `snapshot.db` at start. The graph, the labels and
+the parent links are unchanged.

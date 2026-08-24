@@ -64,6 +64,26 @@ still scopes what diff and restore touch.
 
 Every other backend ignores volumes; for them the field is reporting only.
 
+### How a shadow copy becomes a handle
+
+Measured on `windows-latest`, 2026-08-24.
+
+A shadow copy answers as a device path such as
+`\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy1`. Files cannot be read
+through that path directly. A directory symlink to it can be read, and the
+trailing backslash is required:
+
+```
+mklink /d C:\ProgramData\snapshot\mounts\<id> "\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopyN\"
+```
+
+So a VSS handle is a mount. Create makes the shadow copy and then the
+symlink. Delete removes the symlink and then the shadow copy. The mount
+outlives a crash, so start-up reconciliation removes any mount with no row.
+
+Once mounted, the shared differ and the byte-copy restore work through it
+unchanged.
+
 The current stub. The real implementation calls the Volume
 Shadow Copy Service API directly. It does not call System Restore, which
 takes minutes and records registry state a rollback does not need.

@@ -41,6 +41,43 @@ Evidence: <commit / tag / gate run / screenshot>
 
 <!-- Entries below, newest first. -->
 
+## 2026-08-24 — I probed VSS before building it, and the probe changed the design
+
+Item 4 is the VSS backend. No machine in this project runs Windows, so the
+choice was to write it against assumptions and learn through CI rounds, or
+to ask Windows first. I asked. The probe is a workflow that creates a shadow
+copy on a runner and reports what happened.
+
+It found the thing I would have got wrong. A shadow copy answers as a device
+path like `\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy1`, and I had
+assumed the backend could read files under it and treat it as a handle. It
+cannot. Opening a file under that path fails with "an object at the
+specified path does not exist". A directory symlink to it does work, and the
+trailing backslash is required.
+
+So a VSS handle is a mount, not a path. Create makes the shadow copy and
+then the symlink; delete removes both. That is state the daemon must clean
+up after a crash, which is work that already exists: `Reconcile` runs at
+start and removes what no row names.
+
+The rest of the answers: creation takes about 2 seconds, which sits on the
+v0.1.0 promise rather than inside it. Default shadow storage is 10 percent
+of the volume, 14.9 GB on that runner. Deletion is clean. The runner is
+elevated, which is the only reason any of this ran.
+
+The good news is what the mount buys. Once mounted, the tree-walk differ and
+the byte-copy restore work through it unchanged, and the manifest that maps
+workset paths to subpaths is what scopes a volume-wide snapshot down to the
+declared directories.
+
+I also shipped a broken workflow on the way here. The probe's step name
+ended in a colon, YAML read it as a key, and GitHub declines to run a file
+that does not parse without saying so. Worse, I had run the validation and
+the commit as separate commands, so the check printed the error and the push
+went out anyway. Gate step 2 now parses every file in `.github/`.
+
+Evidence: probe run 32679712431, all 10 steps green.
+
 ## 2026-08-24 — The gate runs on Windows, after 3 rounds of being wrong
 
 Windows is the v0.1.0 platform and no machine in this project runs it, so

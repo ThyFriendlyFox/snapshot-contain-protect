@@ -157,10 +157,30 @@ carry work that is already written and only needs proving.
 - **Scope guard:** Create and delete only. Diff and restore are item 5. The
   Volume Shadow Copy API directly; System Restore is never called.
 - **Release:** v0.1.0
-- **Status:** blocked on item 3
+- **Status:** ready. Item 3 is done, and the VSS probe (run 32679712431)
+  settled the design.
 - **Note:** Needs Administrator. The daemon must detect elevation and refuse
   with a sentence, not a stack trace. Decide in this item whether it ships as
   a Windows service running as LocalSystem.
+- **What the probe found, 2026-08-24, on `windows-latest`:**
+  - `Win32_ShadowCopy.Create("C:\", "ClientAccessible")` works and takes
+    about 2 seconds. The v0.1.0 promise of under 2 seconds is close to that
+    measurement, not comfortably inside it. Measure before promising.
+  - The shadow copy answers as
+    `\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy1`.
+  - **That path is not directly readable.** Opening a file under it fails
+    with "an object at the specified path does not exist".
+  - A directory symlink to it does work, and the trailing backslash is
+    required: `mklink /d C:\mount "<device>\"`. Reading through the mount
+    returned the pre-snapshot contents.
+  - So a handle is a **mount**, not a path the backend already holds. Create
+    makes the shadow copy and then the symlink; delete removes the symlink
+    and then the shadow copy. The mount is state the daemon must clean up,
+    including after a crash, which is what `Reconcile` already exists for.
+  - Default shadow storage is 10 percent of the volume: 14.9 GB maximum on
+    that runner, 736 MB allocated for 1 copy. Item 6 must read this, because
+    the provider evicts the oldest copy when the cap is reached.
+  - `Remove-CimInstance` on the `Win32_ShadowCopy` deletes it cleanly.
 
 ### 5. VSS diff and restore
 
@@ -172,6 +192,11 @@ carry work that is already written and only needs proving.
 - **Use case:** "Decide whether to roll back" and "Undo a file operation".
 - **Scope guard:** Restore copies out of the shadow copy into the live paths.
   No volume-level revert, which would take the whole disk back.
+- **Note:** The probe means this item reuses what exists. Once the shadow
+  copy is mounted, the tree-walk differ and the byte-copy restore work
+  through the mount unchanged. The manifest maps each workset path to its
+  subpath under the mount, which is also what scopes a volume-wide snapshot
+  down to the declared paths.
 - **Release:** v0.1.0
 - **Status:** blocked on item 4
 - **Note:** Restore is O(changed bytes) here, not a swap. The README's

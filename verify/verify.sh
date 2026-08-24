@@ -13,8 +13,29 @@ if [ -n "$unformatted" ]; then
 fi
 
 echo "== 2/6 vet =="
-go vet ./...
-
+# A workflow that does not parse is invisible until GitHub rejects it, and
+# the gate that would have caught it does not run. Check them here.
+if command -v python3 >/dev/null 2>&1; then
+  python3 - <<'PYEOF'
+import glob, sys
+try:
+    import yaml
+except ImportError:
+    print("SKIPPED LOUDLY: no pyyaml; workflow files are unchecked")
+    sys.exit(0)
+bad = 0
+for path in sorted(glob.glob(".github/workflows/*.yml")) + sorted(glob.glob(".github/*.yml")):
+    try:
+        yaml.safe_load(open(path))
+    except Exception as err:
+        print("%s does not parse: %s" % (path, err))
+        bad = 1
+sys.exit(bad)
+PYEOF
+else
+  echo "SKIPPED LOUDLY: no python3; workflow files are unchecked"
+fi
+go vet ./... >/dev/null
 echo "== 3/6 build =="
 go build ./...
 

@@ -40,7 +40,7 @@ jobs:
           "before the snapshot" | Out-File -FilePath C:\probe\marker.txt -Encoding ascii
           Get-Content C:\probe\marker.txt
 
-      - name: Create a shadow copy of C:
+      - name: "Create a shadow copy of C:"
         id: create
         shell: pwsh
         run: |

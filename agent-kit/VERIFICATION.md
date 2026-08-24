@@ -3,7 +3,7 @@
 `./verify/verify.sh` runs, in order:
 
 1. Format check — `gofmt -l cmd internal`
-2. Vet — `go vet ./...`
+2. Vet — `go vet ./...`, and every file in `.github/` must parse as YAML
 3. Build — `go build ./...`
 4. Tests — `go test ./...`
 5. The live Btrfs gate — `go test -tags btrfs_live ./internal/engine/ -run TestBtrfsLive -v`
@@ -52,6 +52,15 @@ a pull request.
 
 The gate creates a subvolume, snapshots it, changes a file, restores it, and
 checks that the file came back. It removes what it made.
+
+## Why the gate parses the workflows
+
+A workflow that does not parse is invisible: GitHub silently declines to run
+it, so the check that would have caught the mistake never runs. Step 2 parses
+every file in `.github/`. It skips loudly when PyYAML is absent.
+
+This was added after a workflow whose step name ended in a colon was
+committed and pushed. YAML read the name as a key.
 
 ## The unprivileged gate
 

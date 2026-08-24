@@ -19,12 +19,14 @@ behavior change. The weekly cycle (WEEKLY.md step 5) refreshes it.
 | CI | ✅ | `.github/workflows/ci.yml` runs the same command as local |
 | Unprivileged gate | ✅ | Gate step 6 reruns the engine and API suites as user 65534 |
 | Acceptance test (START.md section 10) | ❌ | Needs a Btrfs host with a 5 GB working set. ROADMAP item 1. |
+| CI actually running | ❌ | The workflows have never fired. 0 runs exist: `ci.yml` needs a pull request or a push to `main`. ROADMAP item 5. |
+| Installable release | ❌ | No tag, no published binary, no license. ROADMAP item 4. |
 
 States: ✅ done (gated) · 🚧 in progress · ❌ not started · 🧊 frozen/won't do.
 
 ## Current week
 
-- **Shipping:** the MVP, built from `START.md` build order steps 1 to 5. ROADMAP item 1 is next.
+- **Shipping:** between cycles. The MVP is built and gated. The next 5 cycles are v0.1.0, the release that makes it usable: ROADMAP items 1 to 5.
 - **Last release:** none. The MVP sits on `claude/build-agent-kit-mvp-rryrb6`, unmerged and untagged. `RELEASING.md` cuts `v0.1.0`.
 - **Known red:** none. The gate is green. The Btrfs backend is untested on a
   Btrfs host, which the gate reports as a loud skip and not as a pass.

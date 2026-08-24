@@ -8,7 +8,7 @@ behavior change. The weekly cycle (WEEKLY.md step 5) refreshes it.
 |---|---|---|
 | Engine interface | ✅ | `./verify/verify.sh` green; 4 operations, 4 backends |
 | Copy backend | ✅ | 18 engine tests, also run as a normal user; 100 snapshots of 200 files stay under 100 MB; modes survive a restore |
-| Btrfs backend | 🚧 | Written and unit-tested through a command seam. Unproven: this kernel cannot mount btrfs. The `verify-btrfs` CI job proves it on a loopback image, and CI has never run. ROADMAP items 1 and 5. |
+| Btrfs backend | ✅ | Proven. `TestBtrfsLive` PASS on a real btrfs filesystem in CI run 32677729798, 2026-08-24: subvolume created, snapshotted, file changed, restored, file came back. |
 | APFS backend | ❌ | Stub. Refuses with "not implemented". |
 | VSS backend | ❌ | Stub. Refuses with "not implemented". |
 | SQLite store | ✅ | 10 store tests; the graph survives a reopen |
@@ -19,14 +19,15 @@ behavior change. The weekly cycle (WEEKLY.md step 5) refreshes it.
 | CI | ✅ | `.github/workflows/ci.yml` runs the same command as local |
 | Unprivileged gate | ✅ | Gate step 6 reruns the engine and API suites as user 65534 |
 | Acceptance test (START.md section 10) | 🚧 | Mechanised as `verify/acceptance.sh` with a CI job. Never executed. ROADMAP items 1 and 5. |
-| CI actually running | ❌ | The workflows have never fired. 0 runs exist: `ci.yml` needs a pull request or a push to `main`. ROADMAP item 5. |
+| CI actually running | 🚧 | First run green: `verify` and `verify-btrfs` both passed on pull request 1. Branch protection is not set, so red can still merge. ROADMAP item 1. |
 | Installable release | ❌ | No tag and no published binary. MIT `LICENSE` is committed. ROADMAP item 4. |
 
 States: ✅ done (gated) · 🚧 in progress · ❌ not started · 🧊 frozen/won't do.
 
 ## Current week
 
-- **Shipping:** between cycles. The MVP is built and gated. The next 5 cycles are v0.1.0, the release that makes it usable: ROADMAP items 1 to 5.
-- **Last release:** none. The MVP sits on `claude/build-agent-kit-mvp-rryrb6`, unmerged and untagged. `RELEASING.md` cuts `v0.1.0`.
-- **Known red:** none. The gate is green. The Btrfs backend is untested on a
-  Btrfs host, which the gate reports as a loud skip and not as a pass.
+- **Shipping:** ROADMAP item 1, "make CI run, and require it". CI now runs; branch protection remains. Windows became v0.1.0 on 2026-08-24, on the human's ranking.
+- **Last release:** none. The MVP sits on pull request 1, unmerged and untagged.
+- **Known red:** none. The gate is green locally and in CI. The Btrfs
+  backend is proven in CI on a loopback image; no physical Btrfs machine has
+  run it.

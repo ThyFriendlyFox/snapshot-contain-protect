@@ -41,6 +41,48 @@ Evidence: <commit / tag / gate run / screenshot>
 
 <!-- Entries below, newest first. -->
 
+## 2026-08-24 — CI ran for the first time, and btrfs is real
+
+Two things happened today that the project had been asserting rather than
+knowing.
+
+The human chose MIT, so `LICENSE` exists and nothing legal blocks a release.
+
+Then I tried to prove the btrfs backend on this machine. I installed
+btrfs-progs, made a 3 GB image, ran mkfs.btrfs, and the mount failed:
+this kernel has no btrfs support and no module tree. The backend cannot be
+proven here by any effort. Installing the tooling did find a real defect
+though. The gate decided whether to run the live btrfs test by asking
+whether the `btrfs` command exists, so a host with the tooling and no kernel
+support ran the test and failed. The gate now needs 3 things — the command,
+`btrfs` in `/proc/filesystems`, and a test root — and names whichever is
+missing.
+
+So I mechanised the proof instead of performing it. `verify/acceptance.sh`
+is START.md section 10 as a script: it builds a 5 GB working set, then
+checks 5 claims and prints PASS or FAIL for each. Two CI jobs make a
+loopback btrfs image, one running the gate on every pull request and one
+running the acceptance test on demand.
+
+Then I opened pull request 1 and CI ran for the first time in this
+repository's history. Both jobs passed, and the line that matters is
+`--- PASS: TestBtrfsLive`. The backend created a subvolume, snapshotted it,
+changed a file, restored, and the file came back. Until today that backend
+was an argument. Now it is a fact, on a loopback image in CI, though still
+not on a physical btrfs machine.
+
+The human also ranked Windows first. The reasoning holds: agents drive
+Windows desktops, and a Linux agent usually runs in a container whose layer
+already rolls back. Windows is where an agent has no undo at all. I flagged
+what VSS costs — a shadow copy covers a volume rather than a directory, it
+needs Administrator, it caps near 64 copies, and a restore is a copy rather
+than a swap, so the sub-second restore promise does not survive. The human
+chose it with those on the table. The roadmap now runs Windows at v0.1.0
+and Linux at v0.2.0, and the queue holds 4 new Windows items.
+
+Evidence: CI run 32677729798, both jobs green. `./verify/verify.sh` green
+locally. 74 tests, 0 failures.
+
 ## 2026-08-23 — The third review round came back clean
 
 I sent the round-2 fixes back for a third pass. All 8 original findings and

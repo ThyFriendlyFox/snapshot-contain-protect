@@ -105,10 +105,10 @@ These are real. They have no workaround at the filesystem layer.
    link for you and stores the directory it points at.
 7. **A workset path must not contain the data directory.** A snapshot of it
    would contain itself. The daemon refuses the snapshot and says so.
-8. **The Btrfs backend is unproven on a Btrfs host.** It is written and unit
-   tested through a command seam. No Btrfs machine has run it yet. The gate
-   reports this as a loud skip, never as a pass, and the `verify-btrfs` CI
-   job proves it on a loopback image once CI runs.
+8. **The Btrfs backend is proven in CI, not on a desktop.** The
+   `verify-btrfs` job creates a loopback Btrfs filesystem and runs the live
+   gate on every pull request. No physical Btrfs machine has run it. On a
+   host without Btrfs the gate skips loudly, never silently.
 
 Limits 1 and 2 disappear inside a container with CRIU. Limit 3 never
 disappears. Limits 6 and 7 are enforced: the daemon refuses the workset

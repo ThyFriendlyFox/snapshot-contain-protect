@@ -29,8 +29,8 @@ States: ✅ done (gated) · 🚧 in progress · ❌ not started · 🧊 frozen/w
 
 ## Current week
 
-- **Shipping:** v0.1.0 is feature-complete. Items 2, 3, 4, 5, 6, 7 and 9 are done. Item 1 needs branch protection, a repository setting the human applies. Item 10, an installable release, is the last one.
-- **Last release:** none. The MVP sits on pull request 1, unmerged and untagged.
+- **Shipping:** v0.1.0 is feature-complete and merged. Items 2, 3, 4, 5, 6, 7, 8 and 9 are done. 2 things remain, and both are the human's: branch protection requiring the `verify` check, and cutting the tag after the artifact runs on a clean Windows machine.
+- **Last release:** none. The MVP merged to `main` on 2026-08-24 as `33a4353`, squashed from pull request 1. Nothing is tagged.
 - **Known red:** none. The gate is green locally and in CI. The Btrfs
   backend is proven in CI on a loopback image; no physical Btrfs machine has
   run it.

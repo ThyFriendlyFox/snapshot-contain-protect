@@ -102,9 +102,10 @@ carry work that is already written and only needs proving.
 - **Scope guard:** No new checks. The workflows exist; they have never run.
 - **Release:** v0.1.0
 - **Status:** in progress. Pull request 1 ran CI for the first time in this
-  repository's history, on 2026-08-24: `verify` and `verify-btrfs` both
-  green. What remains is branch protection, which is a repository setting
-  the human applies.
+  repository's history and merged green on 2026-08-24. What remains is
+  branch protection, a repository setting the human applies. Until it is
+  set, the promise is false: a red pull request can still merge, and `main`
+  is now what a person would install from.
 
 ### 2. A Windows gate that runs on every pull request
 
@@ -257,8 +258,10 @@ carry work that is already written and only needs proving.
 - **Scope guard:** No conversion of a directory into a subvolume. Nothing a
   person did not name is ever restored.
 - **Release:** v0.2.0
-- **Status:** in progress (week of 2026-08-24). Written, with 3 unit tests
-  and a live gate case. The live half runs in the `verify-btrfs` CI job.
+- **Status:** done, 2026-08-24. `TestBtrfsLivePlainDirectory` PASS on a real
+  btrfs filesystem in CI run 32681584943. The gate changes a declared
+  directory and an undeclared sibling, restores, and proves the sibling kept
+  its new contents.
 - **Note:** The promise was sharpened on 2026-08-24, before any code. It
   said "states which paths it converted", which assumed the backend would
   turn a directory into a subvolume. That is destructive and the scope guard
@@ -351,6 +354,7 @@ Grouped by the release they most likely serve.
 
 | Week | Feature | Release | Evidence |
 |---|---|---|---|
+| 2026-08-24 | A workset that covers a plain directory on Btrfs | unreleased | `TestBtrfsLivePlainDirectory` PASS in CI run 32681584943; the undeclared sibling survives |
 | 2026-08-24 | Retention inside the provider's budget, and eviction detection | unreleased | 3 budget tests and 2 eviction tests; `Budgeter` and `Verifier` seams |
 | 2026-08-24 | VSS restore | unreleased | `TestVSSLive` PASS in CI run 32680584229, restoring through the mount |
 | 2026-08-24 | The VSS backend: create, delete and diff | unreleased | `TestVSSLive` PASS in 7.45 s, CI run 32680184324, against a real shadow copy provider |

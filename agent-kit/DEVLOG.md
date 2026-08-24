@@ -41,6 +41,38 @@ Evidence: <commit / tag / gate run / screenshot>
 
 <!-- Entries below, newest first. -->
 
+## 2026-08-24 — The MVP merged to main
+
+Pull request 1 merged as `33a4353`, squashed. It carries the whole build:
+the engine and its 4 backends, the store, the daemon, the client, retention,
+start-up reconciliation, the packaging, and the agent kit that governed all
+of it.
+
+What is proven rather than asserted: 105 tests green on 3 platforms, a live
+btrfs gate on a loopback image, a live VSS gate making a real shadow copy on
+an elevated Windows runner, and the START.md section 10 acceptance numbers
+measured on a 5.1 GB working set.
+
+What is not: no release is tagged, the Windows install registers a scheduled
+task rather than a service, and APFS is still a stub. Those are written into
+the README and the roadmap rather than left for somebody to discover.
+
+Item 8 finished on the way in. A plain directory inside a subvolume is now
+snapshotted through that subvolume, and a restore returns the declared
+directory and nothing beside it. The live gate proves the sibling survives.
+
+The gate found 2 defects in the last hour of work that no host here could
+have found: a Windows contract mismatch in `VolumeOf`, and a `btrfs
+subvolume show` call that needs root in a gate that runs unprivileged on
+purpose. Both were in code written minutes earlier.
+
+Branch protection is still not set. Until it is, the promise of item 1 is
+false: a red pull request can merge into the branch a person would install
+from.
+
+Evidence: merge commit `33a4353`. CI run 32681584943 green on all 4 jobs
+before the merge.
+
 ## 2026-08-24 — v0.1.0 is feature-complete, and retention learned to distrust itself
 
 Items 5 and 6 landed, which finishes the Windows feature work.

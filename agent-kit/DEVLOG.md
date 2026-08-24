@@ -41,6 +41,37 @@ Evidence: <commit / tag / gate run / screenshot>
 
 <!-- Entries below, newest first. -->
 
+## 2026-08-24 — The gate runs on Windows, after 3 rounds of being wrong
+
+Windows is the v0.1.0 platform and no machine in this project runs it, so
+the CI job is the only place Windows is real. It took 3 rounds to go green,
+and each failure was worth having.
+
+Round 1 died at step 1. Git on Windows checks out CRLF, gofmt reads a CRLF
+file as unformatted, and all 26 files were listed. A `.gitattributes`
+pinning LF fixes it.
+
+Round 2 reached the tests and failed 3. Two compared a diff answer against
+the path they had declared: the daemon stores the resolved path, and a
+Windows temp directory arrives as the 8.3 short name `RUNNER~1` and resolves
+to `runneradmin`. That is the same rule that resolves a symlink on unix, so
+the tests were wrong and the product was right. The third used `/x`, which
+is not an absolute path on Windows: `filepath.Rel` could not relate it to a
+drive-rooted path, the nesting guard reported nothing, and the test read
+that silence as a pass waiting to happen. A guard that cannot compare 2
+paths and a guard that finds no nesting look identical from outside. Running
+on a second platform is what exposed it.
+
+Round 3 is green: format, vet, build and the whole suite on `windows-latest`.
+Step 5 skips loudly because there is no btrfs there. Step 6 says a non-unix
+host has no permission bits to drop.
+
+Nothing about VSS is built yet. What this proves is that the daemon, the
+store, the client and the copy backend run on Windows, which is the harness
+every VSS item depends on.
+
+Evidence: CI run 32678743583, all 3 jobs green. 80 tests.
+
 ## 2026-08-24 — The acceptance test ran, and every claim in the spec holds
 
 START.md section 10 has been the open question since day 1. Today it has

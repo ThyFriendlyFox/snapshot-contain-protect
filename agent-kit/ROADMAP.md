@@ -116,9 +116,11 @@ carry work that is already written and only needs proving.
 - **Scope guard:** The existing backends only. No VSS yet. A PowerShell entry
   point may replace `verify.sh` on Windows, but it runs the same steps.
 - **Release:** v0.1.0
-- **Status:** in progress (week of 2026-08-24). The `verify-windows` job is
-  written and the suites now skip loudly where Windows cannot hold a Unix
-  guarantee: symlink creation, and permission bits. Waiting on the first run.
+- **Status:** done, 2026-08-24. `verify-windows` green on `windows-latest`
+  in CI run 32678743583: format, vet, build and the full suite. Step 5 skips
+  loudly with no btrfs; step 6 states that a non-unix host has no permission
+  bits to drop. 3 rounds were needed: CRLF checkout, then 8.3 short path
+  resolution, then a test using a path that is not absolute on Windows.
 - **Note:** Both binaries already cross-compile clean for `windows/amd64`,
   vet included. What is unknown is what fails at run time: `os.Symlink`
   needs Developer Mode or elevation, and `os.Chmod` on Windows only flips
@@ -277,6 +279,7 @@ Grouped by the release they most likely serve.
 
 | Week | Feature | Release | Evidence |
 |---|---|---|---|
+| 2026-08-24 | The gate runs on Windows | unreleased | `verify-windows` green in CI run 32678743583 |
 | 2026-08-24 | Startup reconciliation of the graph and the snapshot root | unreleased | 6 tests in `internal/api/reconcile_test.go`; the daemon repairs at start and refuses a wrong data directory |
 | 2026-08-24 | Btrfs proven, and the acceptance test run | unreleased | CI runs 32677729798 and 32677974928: `TestBtrfsLive` PASS; snapshot 8 ms, diff 12 ms, 100 snapshots 21 MB on 5120 MB |
 | 2026-08-23 | MVP: engine, store, daemon, client, retention | unreleased | `./verify/verify.sh` green at `HEAD`; 74 tests, 0 failures |

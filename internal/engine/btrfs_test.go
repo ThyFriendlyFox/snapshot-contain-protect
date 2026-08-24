@@ -26,14 +26,6 @@ func (f *fakeRunner) run(_ context.Context, name string, args ...string) ([]byte
 	if f.fail != "" && strings.Contains(line, f.fail) {
 		return nil, os.ErrPermission
 	}
-	// `subvolume show` is how the backend finds the subvolume enclosing a
-	// path. It fails on a plain directory, which is the whole point.
-	if len(args) == 3 && args[0] == "subvolume" && args[1] == "show" {
-		if f.subvolumes[args[2]] {
-			return nil, nil
-		}
-		return nil, os.ErrInvalid
-	}
 	// A real snapshot creates the destination directory. Fake that much, so
 	// the manifest and the differ have something to read.
 	if len(args) >= 3 && args[0] == "subvolume" && args[1] == "snapshot" {
@@ -54,6 +46,8 @@ func newFakeBtrfs(t *testing.T) (*Btrfs, *fakeRunner, string) {
 	f := &fakeRunner{subvolumes: map[string]bool{work: true}}
 	b := NewBtrfs(filepath.Join(base, "snapshots"))
 	b.run = f.run
+	// No btrfs filesystem here, so the test says which paths are subvolumes.
+	b.isSubvolume = func(p string) bool { return f.subvolumes[p] }
 	if err := os.MkdirAll(b.root, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -278,5 +272,18 @@ func TestBtrfsStillSwapsWhenTheSourceIsASubvolume(t *testing.T) {
 	}
 	if !slices.Contains(f.calls, "btrfs subvolume delete "+work) {
 		t.Fatalf("calls = %v, want the swap path", f.calls)
+	}
+}
+
+func TestIsSubvolumeRootRefusesAPlainDirectory(t *testing.T) {
+	// This host has no btrfs, so a plain directory is all that can be
+	// checked. The property under test is that inode 256 is required, not
+	// that any directory passes.
+	dir := t.TempDir()
+	if isSubvolumeRoot(dir) {
+		t.Fatal("a plain directory was reported as a subvolume root")
+	}
+	if isSubvolumeRoot(filepath.Join(dir, "absent")) {
+		t.Fatal("a missing path was reported as a subvolume root")
 	}
 }

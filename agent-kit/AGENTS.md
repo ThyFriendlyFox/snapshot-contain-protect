@@ -73,6 +73,7 @@ Requires Go 1.25.
 | `internal/engine/copy.go` `swapIn` | The final cleanup runs after both renames. A failure there is housekeeping, not a failed restore. A stale `.snapshot-previous` wedges every later restore of that path. |
 | Read-only directories | They appear in real working sets, and as root every permission check passes. Gate step 6 runs the suites as a normal user; do not let it rot. |
 | `.github/workflows/*.yml` | A step name ending in a colon makes YAML read it as a key, and GitHub then declines to run the file without telling anyone. Gate step 2 parses them. |
+| `internal/engine/btrfs.go` subvolume detection | `btrfs subvolume show` needs root. The gate runs unprivileged on purpose, so detection reads inode 256, which every subvolume root has. Do not "clarify" it back into a command. |
 | `internal/engine/volume*.go` | `GetVolumePathNameW` answers from the path string and never touches the disk; the unix walk needs the path to exist. `VolumeOf` stats above the split so both platforms keep 1 contract. |
 
 ## House style

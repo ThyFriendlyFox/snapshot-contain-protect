@@ -26,11 +26,35 @@ func execRunner(ctx context.Context, name string, args ...string) ([]byte, error
 type Btrfs struct {
 	root string
 	run  Runner
+	// isSubvolume reports whether a path is the root of a subvolume. It is a
+	// field so a test can answer without a btrfs filesystem.
+	isSubvolume func(string) bool
 }
 
 // NewBtrfs returns a Btrfs backend that keeps snapshots under root. The root
 // must be on the same Btrfs filesystem as the working set.
-func NewBtrfs(root string) *Btrfs { return &Btrfs{root: root, run: execRunner} }
+func NewBtrfs(root string) *Btrfs {
+	return &Btrfs{root: root, run: execRunner, isSubvolume: isSubvolumeRoot}
+}
+
+// isSubvolumeRoot reports whether path is the root of a btrfs subvolume.
+// Every subvolume root has inode 256, which is a documented and stable
+// property of the filesystem.
+//
+// `btrfs subvolume show` would say the same thing more clearly and needs
+// root to do it. The daemon runs unprivileged wherever it can, and asking a
+// question should not be the thing that demands elevation.
+func isSubvolumeRoot(path string) bool {
+	fi, err := os.Stat(path)
+	if err != nil || !fi.IsDir() {
+		return false
+	}
+	ino, ok := inodeOf(fi)
+	return ok && ino == btrfsSubvolumeInode
+}
+
+// btrfsSubvolumeInode is the inode number btrfs gives every subvolume root.
+const btrfsSubvolumeInode = 256
 
 func (b *Btrfs) Name() string { return "btrfs" }
 
@@ -65,7 +89,7 @@ func (b *Btrfs) Create(ctx context.Context, id string, sources []string) (string
 		// btrfs snapshots a subvolume, never a plain directory. A directory
 		// inside one is snapshotted through its subvolume and addressed as a
 		// subpath, the way the VSS backend addresses a path inside a volume.
-		subvol, err := b.enclosingSubvolume(ctx, src)
+		subvol, err := b.enclosingSubvolume(src)
 		if err != nil {
 			b.cleanup(ctx, handle, m)
 			return "", err
@@ -193,10 +217,10 @@ func (b *Btrfs) cleanup(ctx context.Context, handle string, m manifest) {
 // enclosingSubvolume returns path itself when it is a subvolume, or the
 // nearest ancestor that is one. A btrfs filesystem always has a subvolume at
 // its root, so the walk terminates there.
-func (b *Btrfs) enclosingSubvolume(ctx context.Context, path string) (string, error) {
+func (b *Btrfs) enclosingSubvolume(path string) (string, error) {
 	current := filepath.Clean(path)
 	for {
-		if _, err := b.run(ctx, "btrfs", "subvolume", "show", current); err == nil {
+		if b.isSubvolume(current) {
 			return current, nil
 		}
 		parent := filepath.Dir(current)

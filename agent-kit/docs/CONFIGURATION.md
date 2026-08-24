@@ -9,7 +9,7 @@ truth.
 |---|---|
 | Linux | `$HOME/.local/share/snapshot` |
 | macOS | `$HOME/.local/share/snapshot` |
-| Windows | `%USERPROFILE%\.local\share\snapshot` |
+| Windows | `%USERPROFILE%\.local\share\snapshot`, or `%ProgramData%\Snapshot` when installed by `install-windows.ps1` |
 
 The data directory holds `snapshots/` and `snapshot.db`. The daemon creates
 both at first start. A missing directory is created; it is not an error.

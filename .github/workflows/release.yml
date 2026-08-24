@@ -16,12 +16,27 @@ jobs:
           cache: true
       - name: Build artifacts
         run: |
-          mkdir -p dist
-          for target in linux/amd64 linux/arm64; do
+          mkdir -p dist stage
+          version="${GITHUB_REF_NAME}"
+          for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
             os=${target%/*}; arch=${target#*/}
-            GOOS=$os GOARCH=$arch go build -o dist/snapshotd-$os-$arch ./cmd/snapshotd
-            GOOS=$os GOARCH=$arch go build -o dist/snapctl-$os-$arch ./cmd/snapctl
+            ext=""
+            [ "$os" = "windows" ] && ext=".exe"
+            pkg="stage/snapshot-$version-$os-$arch"
+            mkdir -p "$pkg"
+            GOOS=$os GOARCH=$arch go build -o "$pkg/snapshotd$ext" ./cmd/snapshotd
+            GOOS=$os GOARCH=$arch go build -o "$pkg/snapctl$ext" ./cmd/snapctl
+            cp README.md LICENSE "$pkg/"
+            if [ "$os" = "windows" ]; then
+              cp packaging/install-windows.ps1 "$pkg/"
+              (cd stage && zip -qr "../dist/$(basename "$pkg").zip" "$(basename "$pkg")")
+            else
+              cp packaging/snapshotd.service "$pkg/"
+              tar -czf "dist/$(basename "$pkg").tar.gz" -C stage "$(basename "$pkg")"
+            fi
           done
+          (cd dist && sha256sum * > SHA256SUMS)
+          ls -l dist
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:

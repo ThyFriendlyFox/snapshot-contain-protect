@@ -18,7 +18,39 @@ way it calls any other tool.
 - Linux. Btrfs for real work; any filesystem for development.
 - Go 1.25 to build.
 
-## Build
+## Install
+
+Download the archive for your platform from the releases page, then:
+
+**Windows.** Unpack it and run the installer from an elevated prompt. The
+VSS backend makes Volume Shadow Copies, and that needs Administrator on
+every Windows edition.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install-windows.ps1
+```
+
+It copies both programs to `%ProgramFiles%\Snapshot`, registers a scheduled
+task that starts the daemon at logon with the highest privileges, and puts
+`snapctl` on PATH. It registers a scheduled task rather than a service:
+`snapshotd` is a console program and does not answer the service control
+protocol yet.
+
+**Linux.** Unpack it, put the 2 programs on your PATH, and install the unit:
+
+```sh
+install -m755 snapshotd snapctl ~/.local/bin/
+mkdir -p ~/.config/systemd/user
+cp snapshotd.service ~/.config/systemd/user/
+systemctl --user enable --now snapshotd
+```
+
+The Btrfs backend needs root for subvolume operations. For that, install the
+unit under `/etc/systemd/system/` instead.
+
+Verify the download against `SHA256SUMS` before you run any of it.
+
+## Build from source
 
 ```sh
 go build ./...

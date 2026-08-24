@@ -27,7 +27,7 @@ whose layer already rolls back. Windows is where an agent has no undo at all.
 
 | Release | Theme | Promise | State |
 |---|---|---|---|
-| v0.1.0 | A person on Windows can use it | A person installs a release binary on Windows, declares a workset, and snapshots, diffs and restores. A snapshot completes in under 2 seconds, and System Restore is never called. | next |
+| v0.1.0 | A person on Windows can use it | A person installs a release binary on Windows, declares a workset, and snapshots, diffs and restores. A snapshot completes in under 3 seconds, and System Restore is never called. | next |
 | v0.2.0 | Linux, proven | The same 5 verbs on Btrfs, with the live gate and the START.md section 10 acceptance numbers recorded. | planned |
 | v0.3.0 | Fast and bounded | A diff of 2 snapshots that differ by 1 file in a set of 100000 files returns in under 2 seconds, and disk use stays inside the provider's shadow storage budget. | planned |
 | v0.4.0 | Built for agents | An agent adds Snapshot with 1 MCP configuration block and gets a checkpoint before each of its actions. | planned |
@@ -283,8 +283,19 @@ carry work that is already written and only needs proving.
   platform, and install text. No distribution packages, no Homebrew, no
   container image.
 - **Release:** v0.1.0 for the Windows half, v0.2.0 for Linux
-- **Status:** blocked on item 5
+- **Status:** in progress (week of 2026-08-24). Everything up to publishing
+  is done: `release.yml` builds Windows and Linux archives with a licence, a
+  README and the platform's install piece, and writes `SHA256SUMS`.
+  `packaging/` holds a systemd unit and a Windows installer.
 - **Note:** MIT `LICENSE` is committed, so nothing legal blocks publishing.
+  What remains is cutting the tag, which publishes to the world. That is the
+  human's call, not the agent's, and `RELEASING.md` step 6 requires running
+  the published artifact on a clean machine before the release is done.
+- **Known gap:** the Windows install registers a scheduled task, not a
+  service. `snapshotd` is a console program and does not answer the service
+  control protocol, so `sc.exe` would start it and then kill it for never
+  reporting that it started. A real service needs `golang.org/x/sys/windows/svc`
+  support compiled in. That is in Later, not in v0.1.0.
 
 ## Later — candidates, not yet specced
 
@@ -303,6 +314,10 @@ Grouped by the release they most likely serve.
 - Diff a snapshot against the live working set, with no snapshot taken.
 - Labels and search: `GET /snapshots?label=`.
 - `GET /snapshots/<id>/paths` — the workset paths of 1 node.
+
+**v0.1.x**
+- A real Windows service, using `golang.org/x/sys/windows/svc`, so the
+  daemon survives a logoff and reports its state to the service manager.
 
 **v0.4.0 and v0.5.0**
 - APFS backend through `fs_snapshot_create`.
@@ -347,6 +362,11 @@ Grouped by the release they most likely serve.
 
 - 2026-08-23 — Seeded the queue at install. Order follows START.md section 9:
   the Btrfs proof first, because the MVP gate skips it on a non-Btrfs host.
+- 2026-08-24 — The v0.1.0 promise moved from "under 2 seconds" to "under 3
+  seconds". The probe measured about 2 seconds for `Win32_ShadowCopy.Create`,
+  so the old bar sat on the measurement rather than inside it and would have
+  been true or false by coin flip. A promise that cannot be relied on is not
+  a promise. The measured number is recorded in item 4.
 - 2026-08-23 — Windows moved to v0.1.0 and Linux to v0.2.0, on the human's
   ranking. The reasoning is in the release ladder. The queue was rewritten:
   4 Windows items were added, the Btrfs proof moved from position 1 to 7,

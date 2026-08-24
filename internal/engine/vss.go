@@ -174,11 +174,15 @@ func (v *VSS) Diff(ctx context.Context, from, to string) (Change, error) {
 	return diffHandles(ctx, from, to)
 }
 
-func (v *VSS) Restore(context.Context, string) error {
-	// ROADMAP item 5. A restore here copies out of the mount into the live
-	// paths; there is no volume-level revert, which would take the whole
-	// disk back.
-	return fmt.Errorf("%w: vss restore is not implemented", ErrUnavailable)
+// Restore copies out of the mounted shadow copy into the live paths. There is
+// no volume-level revert: that would take the whole disk back, including
+// every file no workset declared.
+//
+// The cost differs from Btrfs and it is worth stating. Btrfs swaps a
+// subvolume, which is constant time. This copies the bytes that changed, so
+// a restore is proportional to the size of the working set.
+func (v *VSS) Restore(ctx context.Context, handle string) error {
+	return restoreTrees(ctx, handle)
 }
 
 // mountedSubpath maps a source path to its place inside the handle.

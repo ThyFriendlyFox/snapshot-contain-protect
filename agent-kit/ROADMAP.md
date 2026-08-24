@@ -201,9 +201,12 @@ carry work that is already written and only needs proving.
   subpath under the mount, which is also what scopes a volume-wide snapshot
   down to the declared paths.
 - **Release:** v0.1.0
-- **Status:** blocked on item 4
-- **Note:** Restore is O(changed bytes) here, not a swap. The README's
-  performance claims must be split by backend before this ships.
+- **Status:** in progress (week of 2026-08-24). Diff was done by item 4:
+  the mount makes a shadow copy look like any tree. Restore now shares
+  `restoreTrees` with the copy backend. The live gate covers it. Waiting on
+  the Windows job.
+- **Note:** Restore is O(changed bytes) here, not a swap. The README now
+  carries a table splitting snapshot and restore cost by backend.
 
 ### 6. Retention inside the shadow copy budget
 

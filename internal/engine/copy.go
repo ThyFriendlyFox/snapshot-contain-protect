@@ -93,6 +93,18 @@ func (c *Copy) Diff(ctx context.Context, from, to string) (Change, error) {
 }
 
 func (c *Copy) Restore(ctx context.Context, handle string) error {
+	return restoreTrees(ctx, handle)
+}
+
+// restoreTrees returns every source in a handle to the state the handle
+// holds. Both the copy backend and VSS use it: once a snapshot is a readable
+// tree, putting it back is the same work, and the difference between a
+// hardlink farm and a mounted shadow copy stops mattering here.
+//
+// It copies bytes rather than linking. The restored tree must not share
+// storage with the snapshot, or the next in-place write would rewrite
+// history.
+func restoreTrees(ctx context.Context, handle string) error {
 	m, err := readManifest(handle)
 	if err != nil {
 		return err
@@ -106,9 +118,6 @@ func (c *Copy) Restore(ctx context.Context, handle string) error {
 		}
 	}
 	for _, s := range m.Sources {
-		// Restore copies bytes instead of hardlinking. The restored tree must
-		// not share inodes with the snapshot, or the next in-place write would
-		// rewrite history.
 		if err := swapIn(ctx, filepath.Join(handle, s.Dir), s.Path, copyBytes); err != nil {
 			return fmt.Errorf("restore %s: %w", s.Path, err)
 		}

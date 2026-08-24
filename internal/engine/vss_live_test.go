@@ -76,6 +76,26 @@ func TestVSSLive(t *testing.T) {
 		t.Fatalf("diff = %+v, want marker.txt modified", change)
 	}
 
+	// A restore must put the working set back to what the first snapshot
+	// holds, copying out of the mount.
+	extra := filepath.Join(work, "junk.txt")
+	if err := os.WriteFile(extra, []byte("junk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.Restore(ctx, handle); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	restored, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(restored) != "before the snapshot" {
+		t.Fatalf("after restore marker.txt = %q, want %q", restored, "before the snapshot")
+	}
+	if _, err := os.Stat(extra); !os.IsNotExist(err) {
+		t.Fatal("junk.txt survived the restore")
+	}
+
 	if err := v.Delete(ctx, second); err != nil {
 		t.Fatalf("delete: %v", err)
 	}

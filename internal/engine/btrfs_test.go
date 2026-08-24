@@ -164,7 +164,4 @@ func TestVSSRefusesOffWindows(t *testing.T) {
 	if !strings.Contains(err.Error(), "windows") {
 		t.Fatalf("the error does not say why: %v", err)
 	}
-	if err := v.Restore(context.Background(), "handle"); !errors.Is(err, ErrUnavailable) {
-		t.Fatalf("Restore = %v, want ErrUnavailable until item 5", err)
-	}
 }

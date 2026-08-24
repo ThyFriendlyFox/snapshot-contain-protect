@@ -95,6 +95,19 @@ Mark a snapshot `auto` when an agent takes it before an action. Snapshot
 keeps the last 50 auto snapshots per workset and every manual one. It never
 prunes a snapshot that a manual snapshot descends from.
 
+## What a restore costs
+
+The 5 verbs behave the same on every backend. Their cost does not.
+
+| Backend | Snapshot | Restore |
+|---|---|---|
+| btrfs | 8 ms on a 5 GB set, measured | Constant time. It swaps a subvolume. |
+| vss | About 2 seconds | Proportional to the working set. It copies out of the shadow copy. |
+| copy | Proportional to the file count | Proportional to the working set. |
+
+There is no volume-level revert on Windows. That would take the whole disk
+back, including every file no workset declared.
+
 ## Known limits
 
 These are real. They have no workaround at the filesystem layer.

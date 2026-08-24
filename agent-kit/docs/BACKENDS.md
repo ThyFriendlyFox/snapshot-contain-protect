@@ -82,7 +82,12 @@ symlink. Delete removes the symlink and then the shadow copy. The mount
 outlives a crash, so start-up reconciliation removes any mount with no row.
 
 Once mounted, the shared differ and the byte-copy restore work through it
-unchanged.
+unchanged. `restoreTrees` serves the copy backend and VSS alike: once a
+snapshot is a readable tree, putting it back is the same work.
+
+A VSS restore copies the bytes, so it costs the size of the working set.
+A Btrfs restore swaps a subvolume and costs nothing. State that difference
+wherever the performance of a restore is claimed.
 
 The current stub. The real implementation calls the Volume
 Shadow Copy Service API directly. It does not call System Restore, which

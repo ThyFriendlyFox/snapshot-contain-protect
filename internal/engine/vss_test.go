@@ -195,3 +195,60 @@ func TestLastLineIgnoresABanner(t *testing.T) {
 		t.Fatalf("lastLine = %q", got)
 	}
 }
+
+func TestVSSRestorePutsTheSnapshotBack(t *testing.T) {
+	ctx := context.Background()
+	v, _, work := newFakeVSS(t)
+
+	// The fake runner does not make a real shadow copy, so stage a handle
+	// that looks like a mounted one and check the restore path itself.
+	handle, err := v.Create(ctx, "01AAA", []string{work})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := readManifest(handle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := filepath.Join(handle, m.Sources[0].Dir)
+	if err := os.MkdirAll(stored, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(stored, "a.txt"), "a")
+
+	replace(t, filepath.Join(work, "a.txt"), "wrecked")
+	writeFile(t, filepath.Join(work, "junk.txt"), "junk")
+
+	if err := v.Restore(ctx, handle); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, filepath.Join(work, "a.txt")); got != "a" {
+		t.Errorf("a.txt = %q, want %q", got, "a")
+	}
+	if _, err := os.Stat(filepath.Join(work, "junk.txt")); !os.IsNotExist(err) {
+		t.Error("junk.txt survived the restore")
+	}
+}
+
+func TestVSSRestoreRefusesADestinationThatBecameASymlink(t *testing.T) {
+	ctx := context.Background()
+	v, _, work := newFakeVSS(t)
+	handle, err := v.Create(ctx, "01AAA", []string{work})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	elsewhere := filepath.Join(filepath.Dir(work), "elsewhere")
+	writeFile(t, filepath.Join(elsewhere, "theirs.txt"), "theirs")
+	if err := os.RemoveAll(work); err != nil {
+		t.Fatal(err)
+	}
+	mustSymlink(t, elsewhere, work)
+
+	if err := v.Restore(ctx, handle); !errors.Is(err, ErrBadSource) {
+		t.Fatalf("error = %v, want ErrBadSource", err)
+	}
+	if got := read(t, filepath.Join(elsewhere, "theirs.txt")); got != "theirs" {
+		t.Fatalf("the link target was disturbed: %q", got)
+	}
+}

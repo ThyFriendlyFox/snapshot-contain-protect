@@ -1,0 +1,97 @@
+# A probe, not a gate. It answers questions about VSS that no host in this
+# project can answer, before item 4 commits to a design:
+#
+#   1. Does the runner have Administrator rights? VSS needs them.
+#   2. Is the VSS service running, and can it make a shadow copy?
+#   3. What does the shadow copy look like, and can files be read through it?
+#   4. Does deleting it work?
+#
+# Run it by hand from the Actions tab. The log is the deliverable.
+name: VSS probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Rights
+        shell: pwsh
+        run: |
+          whoami
+          $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $principal = New-Object Security.Principal.WindowsPrincipal($id)
+          "elevated: " + $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+      - name: VSS service
+        shell: pwsh
+        run: Get-Service VSS | Format-List Name, Status, StartType
+
+      - name: Volumes
+        shell: pwsh
+        run: Get-Volume | Format-Table DriveLetter, FileSystemType, SizeRemaining
+
+      - name: Make a file to look for later
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path C:\probe | Out-Null
+          "before the snapshot" | Out-File -FilePath C:\probe\marker.txt -Encoding ascii
+          Get-Content C:\probe\marker.txt
+
+      - name: Create a shadow copy of C:
+        id: create
+        shell: pwsh
+        run: |
+          $class = [WMICLASS]"root\cimv2:Win32_ShadowCopy"
+          $result = $class.Create("C:\", "ClientAccessible")
+          "ReturnValue: $($result.ReturnValue)"
+          if ($result.ReturnValue -ne 0) { throw "Win32_ShadowCopy.Create returned $($result.ReturnValue)" }
+          $shadow = Get-CimInstance Win32_ShadowCopy | Where-Object { $_.ID -eq $result.ShadowID }
+          "ID:           $($shadow.ID)"
+          "DeviceObject: $($shadow.DeviceObject)"
+          "InstallDate:  $($shadow.InstallDate)"
+          "id=$($shadow.ID)"           | Out-File -Append -FilePath $env:GITHUB_OUTPUT -Encoding ascii
+          "device=$($shadow.DeviceObject)" | Out-File -Append -FilePath $env:GITHUB_OUTPUT -Encoding ascii
+
+      - name: Change the file after the snapshot
+        shell: pwsh
+        run: |
+          "after the snapshot" | Out-File -FilePath C:\probe\marker.txt -Encoding ascii
+          Get-Content C:\probe\marker.txt
+
+      - name: Read the old contents back through the shadow copy
+        shell: pwsh
+        run: |
+          $device = "${{ steps.create.outputs.device }}"
+          "device: $device"
+          # A shadow copy device path needs a trailing separator before a
+          # subpath. This is the read path a restore would copy from.
+          $path = "$device\probe\marker.txt"
+          "reading: $path"
+          try {
+            Get-Content $path
+          } catch {
+            "direct read failed: $($_.Exception.Message)"
+            "trying a directory symlink instead"
+            cmd /c mklink /d C:\shadowmount "$device\" 2>&1
+            Get-Content C:\shadowmount\probe\marker.txt
+          }
+
+      - name: How many shadow copies does the volume hold
+        if: always()
+        shell: pwsh
+        run: |
+          (Get-CimInstance Win32_ShadowCopy | Measure-Object).Count
+          vssadmin list shadowstorage 2>&1 | Out-String
+
+      - name: Delete the shadow copy
+        if: always()
+        shell: pwsh
+        run: |
+          $id = "${{ steps.create.outputs.id }}"
+          if ([string]::IsNullOrWhiteSpace($id)) { "nothing to delete"; exit 0 }
+          Get-CimInstance Win32_ShadowCopy | Where-Object { $_.ID -eq $id } | Remove-CimInstance
+          "deleted $id"
+          (Get-CimInstance Win32_ShadowCopy | Measure-Object).Count

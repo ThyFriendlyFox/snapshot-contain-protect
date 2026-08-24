@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -113,7 +114,9 @@ func TestBtrfsRestoreSwapsTheSubvolume(t *testing.T) {
 }
 
 func TestBtrfsUnavailableWithoutTheTool(t *testing.T) {
-	if _, err := os.Stat("/sbin/btrfs"); err == nil {
+	// Look the command up the way the backend does. A hardcoded path misses
+	// an install under /usr/bin and turns this into a false pass.
+	if _, err := exec.LookPath("btrfs"); err == nil {
 		t.Skip("this host has btrfs tooling")
 	}
 	b := NewBtrfs(t.TempDir())

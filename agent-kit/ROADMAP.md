@@ -96,7 +96,10 @@ are the whole of v0.1.0, in the order they unblock each other.
   filesystem the MVP targets.
 - **Scope guard:** No macOS and no Windows work. No new verbs.
 - **Release:** v0.1.0
-- **Status:** ready
+- **Status:** in progress (week of 2026-08-23) — mechanised, not yet run.
+  The live gate and the acceptance test are both wired into CI on a
+  loopback btrfs image. Neither has executed: no CI run exists yet, which
+  is item 5. This item cannot finish before item 5 does.
 
 ### 2. A workset that covers a plain directory on Btrfs
 
@@ -135,9 +138,9 @@ are the whole of v0.1.0, in the order they unblock each other.
 - **Scope guard:** Binaries, a systemd user unit, install text and a
   license. No distribution packages, no Homebrew, no container image.
 - **Release:** v0.1.0
-- **Status:** blocked on the human choosing a license
-- **Note:** The repository has no `LICENSE`. That is the human's decision,
-  and it blocks publishing anything.
+- **Status:** ready
+- **Note:** Unblocked on 2026-08-23. The human chose MIT and `LICENSE` is
+  committed.
 
 ### 5. Make CI run, and require it
 
@@ -206,6 +209,8 @@ Grouped by the release they most likely serve.
 
 - 2026-08-23 — Seeded the queue at install. Order follows START.md section 9:
   the Btrfs proof first, because the MVP gate skips it on a non-Btrfs host.
+- 2026-08-23 — Item 5 now blocks item 1. Item 1 is proven by a CI job on a
+  loopback btrfs image, and CI has never run. Cycle item 5 first.
 - 2026-08-23 — Added the release ladder and re-scoped the queue to v0.1.0.
   The queue held 4 engineering items and no path to a person using the tool.
   2 items were added: an installable release, and CI that actually runs.

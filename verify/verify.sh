@@ -22,10 +22,17 @@ echo "== 4/6 test =="
 go test ./...
 
 echo "== 5/6 btrfs gate =="
-if command -v btrfs >/dev/null 2>&1; then
-  go test -tags btrfs_live ./internal/engine/ -run TestBtrfsLive -v
+# Two things are needed, and the tooling alone is not enough: a host can hold
+# btrfs-progs on a kernel with no btrfs support at all.
+if ! command -v btrfs >/dev/null 2>&1; then
+  echo "SKIPPED LOUDLY: no btrfs command on this host; the btrfs backend is unproven here."
+elif ! grep -qw btrfs /proc/filesystems 2>/dev/null; then
+  echo "SKIPPED LOUDLY: btrfs-progs is installed but this kernel cannot mount btrfs; the btrfs backend is unproven here."
+elif [ -z "${SNAPSHOT_BTRFS_TEST_ROOT:-}" ]; then
+  echo "SKIPPED LOUDLY: this host can run btrfs, but SNAPSHOT_BTRFS_TEST_ROOT is not set."
+  echo "                Set it to a writable directory on a btrfs filesystem to prove the backend."
 else
-  echo "SKIPPED LOUDLY: btrfs tooling absent on this host; the btrfs backend is unproven here."
+  go test -tags btrfs_live ./internal/engine/ -run TestBtrfsLive -v
 fi
 
 echo "== 6/6 unprivileged gate =="

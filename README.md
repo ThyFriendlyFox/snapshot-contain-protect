@@ -107,7 +107,8 @@ These are real. They have no workaround at the filesystem layer.
    would contain itself. The daemon refuses the snapshot and says so.
 8. **The Btrfs backend is unproven on a Btrfs host.** It is written and unit
    tested through a command seam. No Btrfs machine has run it yet. The gate
-   reports this as a loud skip, never as a pass.
+   reports this as a loud skip, never as a pass, and the `verify-btrfs` CI
+   job proves it on a loopback image once CI runs.
 
 Limits 1 and 2 disappear inside a container with CRIU. Limit 3 never
 disappears. Limits 6 and 7 are enforced: the daemon refuses the workset
@@ -131,6 +132,10 @@ agent-kit/         how this repository is worked on
 `agent-kit/ROUTING.md` says which file governs which situation.
 `agent-kit/AGENTS.md` is binding whenever code is touched.
 `agent-kit/ROADMAP.md` decides what gets built next.
+
+## License
+
+MIT. See `LICENSE`.
 
 ## Security
 

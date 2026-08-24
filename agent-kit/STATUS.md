@@ -8,7 +8,7 @@ behavior change. The weekly cycle (WEEKLY.md step 5) refreshes it.
 |---|---|---|
 | Engine interface | ✅ | `./verify/verify.sh` green; 4 operations, 4 backends |
 | Copy backend | ✅ | 18 engine tests, also run as a normal user; 100 snapshots of 200 files stay under 100 MB; modes survive a restore |
-| Btrfs backend | 🚧 | Written and unit-tested through a command seam. Unproven on a Btrfs host: the live gate skips here. ROADMAP item 1. |
+| Btrfs backend | 🚧 | Written and unit-tested through a command seam. Unproven: this kernel cannot mount btrfs. The `verify-btrfs` CI job proves it on a loopback image, and CI has never run. ROADMAP items 1 and 5. |
 | APFS backend | ❌ | Stub. Refuses with "not implemented". |
 | VSS backend | ❌ | Stub. Refuses with "not implemented". |
 | SQLite store | ✅ | 10 store tests; the graph survives a reopen |
@@ -18,9 +18,9 @@ behavior change. The weekly cycle (WEEKLY.md step 5) refreshes it.
 | Container layer | 🧊 | Seam only. START.md puts it after step 5; the MVP stops at step 5. |
 | CI | ✅ | `.github/workflows/ci.yml` runs the same command as local |
 | Unprivileged gate | ✅ | Gate step 6 reruns the engine and API suites as user 65534 |
-| Acceptance test (START.md section 10) | ❌ | Needs a Btrfs host with a 5 GB working set. ROADMAP item 1. |
+| Acceptance test (START.md section 10) | 🚧 | Mechanised as `verify/acceptance.sh` with a CI job. Never executed. ROADMAP items 1 and 5. |
 | CI actually running | ❌ | The workflows have never fired. 0 runs exist: `ci.yml` needs a pull request or a push to `main`. ROADMAP item 5. |
-| Installable release | ❌ | No tag, no published binary, no license. ROADMAP item 4. |
+| Installable release | ❌ | No tag and no published binary. MIT `LICENSE` is committed. ROADMAP item 4. |
 
 States: ✅ done (gated) · 🚧 in progress · ❌ not started · 🧊 frozen/won't do.
 

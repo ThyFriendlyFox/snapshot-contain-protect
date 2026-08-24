@@ -15,12 +15,36 @@ Step 5 runs only when the host has the `btrfs` command. On any other host it
 prints "SKIPPED LOUDLY" and states that the Btrfs backend is unproven there.
 It never passes silently.
 
+Step 5 runs only when 3 things hold: the `btrfs` command exists, the kernel
+lists `btrfs` in `/proc/filesystems`, and `SNAPSHOT_BTRFS_TEST_ROOT` names a
+directory. It says which of the 3 is missing. The tooling alone is not
+enough: a host can hold `btrfs-progs` on a kernel that cannot mount btrfs.
+
 To run it, point it at a writable directory on a Btrfs filesystem:
 
 ```sh
 export SNAPSHOT_BTRFS_TEST_ROOT=/mnt/btrfs/snapshot-test
 ./verify/verify.sh
 ```
+
+The `verify-btrfs` job in `.github/workflows/ci.yml` makes that filesystem on
+a loopback image, so every pull request proves the backend even though no
+development host here runs btrfs.
+
+## The acceptance test
+
+`verify/acceptance.sh` is START.md section 10, mechanised. It needs
+`SNAPSHOT_BTRFS_TEST_ROOT` and writes a 5 GB working set, so it is not part
+of the gate. It checks 5 claims and prints PASS or FAIL for each:
+
+1. A snapshot completes in under 1 second.
+2. A diff of 2 snapshots differing by 1 file returns in under 2 seconds.
+3. A restore returns the working set to its exact prior file state.
+4. The snapshot graph survives a daemon restart.
+5. 100 sequential snapshots consume less than 100 MB.
+
+The `acceptance` CI job runs it on every push to `main` and on demand, not on
+a pull request.
 
 The gate creates a subvolume, snapshots it, changes a file, restores it, and
 checks that the file came back. It removes what it made.

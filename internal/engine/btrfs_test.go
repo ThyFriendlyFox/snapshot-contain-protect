@@ -2,9 +2,11 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -142,12 +144,27 @@ func TestSelectAutoFallsBackToCopy(t *testing.T) {
 }
 
 func TestStubBackendsRefuseCleanly(t *testing.T) {
-	for _, e := range []Engine{NewAPFS(), NewVSS()} {
-		if err := e.Available(); err == nil {
-			t.Fatalf("%s reported itself available", e.Name())
-		}
-		if _, err := e.Create(context.Background(), "01AAA", nil); err == nil {
-			t.Fatalf("%s created a snapshot", e.Name())
-		}
+	if err := NewAPFS().Available(); err == nil {
+		t.Fatal("apfs reported itself available")
+	}
+	if _, err := NewAPFS().Create(context.Background(), "01AAA", nil); err == nil {
+		t.Fatal("apfs created a snapshot")
+	}
+}
+
+func TestVSSRefusesOffWindows(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("this host is windows; the live gate covers it")
+	}
+	v := NewVSS(t.TempDir())
+	err := v.Available()
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("Available = %v, want ErrUnavailable", err)
+	}
+	if !strings.Contains(err.Error(), "windows") {
+		t.Fatalf("the error does not say why: %v", err)
+	}
+	if err := v.Restore(context.Background(), "handle"); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("Restore = %v, want ErrUnavailable until item 5", err)
 	}
 }

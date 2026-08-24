@@ -157,8 +157,10 @@ carry work that is already written and only needs proving.
 - **Scope guard:** Create and delete only. Diff and restore are item 5. The
   Volume Shadow Copy API directly; System Restore is never called.
 - **Release:** v0.1.0
-- **Status:** ready. Item 3 is done, and the VSS probe (run 32679712431)
-  settled the design.
+- **Status:** in progress (week of 2026-08-24). The backend is written and
+  unit-tested through a Runner seam, the way the Btrfs backend is. The live
+  gate is wired into the Windows CI job. Whether it holds against a real
+  provider is unknown until that job runs.
 - **Note:** Needs Administrator. The daemon must detect elevation and refuse
   with a sentence, not a stack trace. Decide in this item whether it ships as
   a Windows service running as LocalSystem.

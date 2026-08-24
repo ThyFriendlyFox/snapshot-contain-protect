@@ -51,6 +51,16 @@ type Engine interface {
 // lives inside the handle so a restore works after a daemon restart.
 type manifest struct {
 	Sources []source `json:"sources"`
+	// Shadows is the VSS backend's own state: the shadow copies this handle
+	// owns and where each is mounted. Every other backend leaves it empty.
+	Shadows []shadow `json:"shadows,omitempty"`
+}
+
+// shadow is 1 Volume Shadow Copy and its mount inside the handle.
+type shadow struct {
+	ID     string `json:"id"`     // the provider's identifier
+	Volume string `json:"volume"` // the volume it copies, such as `C:\`
+	Dir    string `json:"dir"`    // the mount's name inside the handle
 }
 
 type source struct {
@@ -193,6 +203,9 @@ func resolve(path string) string {
 	}
 	return filepath.Join(resolve(parent), filepath.Base(path))
 }
+
+// mkdirAll creates a handle directory.
+func mkdirAll(path string) error { return os.MkdirAll(path, 0o755) }
 
 // subtreeName keeps handles readable while staying collision-free.
 func subtreeName(i int, path string) string {

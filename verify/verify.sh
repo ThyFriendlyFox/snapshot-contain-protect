@@ -4,7 +4,7 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
-echo "== 1/6 format =="
+echo "== 1/7 format =="
 unformatted=$(gofmt -l cmd internal)
 if [ -n "$unformatted" ]; then
   echo "gofmt needs to run on:"
@@ -12,7 +12,7 @@ if [ -n "$unformatted" ]; then
   exit 1
 fi
 
-echo "== 2/6 vet =="
+echo "== 2/7 vet =="
 # A workflow that does not parse is invisible until GitHub rejects it, and
 # the gate that would have caught it does not run. Check them here.
 if command -v python3 >/dev/null 2>&1; then
@@ -36,13 +36,13 @@ else
   echo "SKIPPED LOUDLY: no python3; workflow files are unchecked"
 fi
 go vet ./... >/dev/null
-echo "== 3/6 build =="
+echo "== 3/7 build =="
 go build ./...
 
-echo "== 4/6 test =="
+echo "== 4/7 test =="
 go test ./...
 
-echo "== 5/6 btrfs gate =="
+echo "== 5/7 btrfs gate =="
 # Two things are needed, and the tooling alone is not enough: a host can hold
 # btrfs-progs on a kernel with no btrfs support at all.
 if ! command -v btrfs >/dev/null 2>&1; then
@@ -56,7 +56,17 @@ else
   go test -tags btrfs_live ./internal/engine/ -run TestBtrfsLive -v
 fi
 
-echo "== 6/6 unprivileged gate =="
+echo "== 6/7 vss gate =="
+if [ "$(uname -s | cut -c1-5)" != "MINGW" ] && [ "$(uname -s | cut -c1-4)" != "MSYS" ]; then
+  echo "SKIPPED LOUDLY: not a windows host; the vss backend is unproven here."
+elif [ -z "${SNAPSHOT_VSS_TEST_ROOT:-}" ]; then
+  echo "SKIPPED LOUDLY: this is windows, but SNAPSHOT_VSS_TEST_ROOT is not set."
+  echo "                Set it to a writable directory and run elevated to prove the backend."
+else
+  go test -tags vss_live ./internal/engine/ -run TestVSSLive -v
+fi
+
+echo "== 7/7 unprivileged gate =="
 # The daemon's documented deployment is a normal user. As root every
 # permission check passes, so the read-only-directory cases prove nothing.
 if [ "$(id -u)" = "0" ] && command -v setpriv >/dev/null 2>&1; then

@@ -7,7 +7,8 @@
 3. Build — `go build ./...`
 4. Tests — `go test ./...`
 5. The live Btrfs gate — `go test -tags btrfs_live ./internal/engine/ -run TestBtrfsLive -v`
-6. The unprivileged gate — the engine and API suites, run again as user 65534
+6. The live VSS gate — `go test -tags vss_live ./internal/engine/ -run TestVSSLive`
+7. The unprivileged gate — the engine and API suites, run again as user 65534
 
 CI runs the same command on 3 hosts: `ubuntu-latest`, `windows-latest`, and
 an `ubuntu-latest` with a loopback btrfs filesystem. A test that cannot hold
@@ -61,6 +62,16 @@ every file in `.github/`. It skips loudly when PyYAML is absent.
 
 This was added after a workflow whose step name ended in a colon was
 committed and pushed. YAML read the name as a key.
+
+## The VSS gate
+
+Step 6 runs only on Windows with `SNAPSHOT_VSS_TEST_ROOT` set, and it needs
+Administrator: a shadow copy is an elevated operation. It makes a real shadow
+copy, reads the pre-snapshot contents back through the mount, diffs 2
+snapshots, and deletes both. Anywhere else it skips loudly.
+
+The `verify-windows` CI job runs it. GitHub's Windows runners are elevated,
+which is the only reason it can run at all.
 
 ## The unprivileged gate
 

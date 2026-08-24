@@ -25,7 +25,7 @@ func Select(id, root string) (Engine, error) {
 	case "apfs":
 		return withCheck(NewAPFS())
 	case "vss":
-		return withCheck(NewVSS())
+		return withCheck(NewVSS(root))
 	default:
 		return nil, fmt.Errorf("unknown backend %q: use auto, btrfs, copy, apfs or vss", id)
 	}

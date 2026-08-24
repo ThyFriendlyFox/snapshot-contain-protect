@@ -36,6 +36,13 @@ jobs:
       - name: Verify
         shell: bash
         run: ./verify/verify.sh
+      - name: Verify, with the vss gate live
+        shell: bash
+        env:
+          SNAPSHOT_VSS_TEST_ROOT: C:\snapshot-vss-test
+        run: |
+          mkdir -p "/c/snapshot-vss-test"
+          ./verify/verify.sh
 
   # The btrfs backend is the one the MVP targets, and no development host here
   # runs btrfs. A loopback image on the runner is where it gets proven.

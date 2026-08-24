@@ -72,6 +72,7 @@ Requires Go 1.25.
 | The safety snapshot | It must never block a restore. The state that most needs a rollback is often the state that cannot be snapshotted. It is also never all-or-nothing: it covers the paths it can and reports what it missed in `safety_warning`. |
 | `internal/engine/copy.go` `swapIn` | The final cleanup runs after both renames. A failure there is housekeeping, not a failed restore. A stale `.snapshot-previous` wedges every later restore of that path. |
 | Read-only directories | They appear in real working sets, and as root every permission check passes. Gate step 6 runs the suites as a normal user; do not let it rot. |
+| `internal/engine/volume*.go` | `GetVolumePathNameW` answers from the path string and never touches the disk; the unix walk needs the path to exist. `VolumeOf` stats above the split so both platforms keep 1 contract. |
 
 ## House style
 

@@ -1,6 +1,10 @@
 package engine
 
-import "sort"
+import (
+	"fmt"
+	"os"
+	"sort"
+)
 
 // VolumeOf reports the mount root of the volume that holds path: `C:\` on
 // Windows, `/` or the nearest mount point on unix.
@@ -9,7 +13,16 @@ import "sort"
 // volume, not a directory, so the Windows backend must know which volumes a
 // workset touches before it can snapshot one. Btrfs does not care, and for
 // that backend this is reporting only.
-func VolumeOf(path string) (string, error) { return volumeOf(path) }
+// The path must exist. Windows would answer without it — GetVolumePathNameW
+// parses the string and never touches the disk — while the unix walk needs a
+// device number to compare. Rather than let the 2 platforms disagree, both
+// require the path, and the answer is a fact instead of a prediction.
+func VolumeOf(path string) (string, error) {
+	if _, err := os.Stat(path); err != nil {
+		return "", fmt.Errorf("volume of %q: %w", path, err)
+	}
+	return volumeOf(path)
+}
 
 // VolumesOf returns the distinct volumes a set of paths covers, sorted. A
 // workset spanning 2 volumes needs 2 shadow copies, which is why the count

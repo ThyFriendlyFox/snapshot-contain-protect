@@ -63,6 +63,9 @@ func TestVolumesOfDeduplicatesAndSorts(t *testing.T) {
 }
 
 func TestVolumeOfRejectsAMissingPath(t *testing.T) {
+	// Both platforms refuse, though only unix has to. Windows answers from
+	// the path string alone, so the check lives above the platform split to
+	// keep 1 contract everywhere.
 	if _, err := VolumeOf(filepath.Join(t.TempDir(), "absent")); err == nil {
 		t.Fatal("a missing path reported a volume")
 	}
